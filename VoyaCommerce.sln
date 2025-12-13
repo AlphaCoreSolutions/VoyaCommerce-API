@@ -1,0 +1,40 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Voya.Core", "Voya.Core\Voya.Core.csproj", "{41D65F5C-F58B-4C90-8266-D517B45C4BC3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Voya.Application", "Voya.Application\Voya.Application.csproj", "{325C3D95-954D-4982-8D7D-2C45BA477F51}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Voya.Infrastructure", "Voya.Infrastructure\Voya.Infrastructure.csproj", "{FB9A1C2E-8D61-4CA2-991D-D12A55FECD4C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Voya.API", "Voya.API\Voya.API.csproj", "{633C59B4-0EBF-4077-BC5D-ECF5BF97FF8F}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{41D65F5C-F58B-4C90-8266-D517B45C4BC3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{41D65F5C-F58B-4C90-8266-D517B45C4BC3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{41D65F5C-F58B-4C90-8266-D517B45C4BC3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{41D65F5C-F58B-4C90-8266-D517B45C4BC3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{325C3D95-954D-4982-8D7D-2C45BA477F51}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{325C3D95-954D-4982-8D7D-2C45BA477F51}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{325C3D95-954D-4982-8D7D-2C45BA477F51}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{325C3D95-954D-4982-8D7D-2C45BA477F51}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FB9A1C2E-8D61-4CA2-991D-D12A55FECD4C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FB9A1C2E-8D61-4CA2-991D-D12A55FECD4C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FB9A1C2E-8D61-4CA2-991D-D12A55FECD4C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FB9A1C2E-8D61-4CA2-991D-D12A55FECD4C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{633C59B4-0EBF-4077-BC5D-ECF5BF97FF8F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{633C59B4-0EBF-4077-BC5D-ECF5BF97FF8F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{633C59B4-0EBF-4077-BC5D-ECF5BF97FF8F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{633C59B4-0EBF-4077-BC5D-ECF5BF97FF8F}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
