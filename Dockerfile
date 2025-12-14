@@ -1,0 +1,28 @@
+# 1. Build Stage (Linux)
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+WORKDIR /src
+
+# Copy csproj files
+COPY ["Voya.API/Voya.API.csproj", "Voya.API/"]
+COPY ["Voya.Application/Voya.Application.csproj", "Voya.Application/"]
+COPY ["Voya.Core/Voya.Core.csproj", "Voya.Core/"]
+COPY ["Voya.Infrastructure/Voya.Infrastructure.csproj", "Voya.Infrastructure/"]
+
+# Restore dependencies
+RUN dotnet restore "Voya.API/Voya.API.csproj"
+
+# Copy the rest of the code
+COPY . .
+
+# Build and Publish
+WORKDIR "/src/Voya.API"
+RUN dotnet build "Voya.API.csproj" -c Release -o /app/build
+RUN dotnet publish "Voya.API.csproj" -c Release -o /app/publish
+
+# 2. Runtime Stage (Linux)
+FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
+WORKDIR /app
+COPY --from=build /app/publish .
+EXPOSE 8080
+ENV ASPNETCORE_URLS=http://+:8080
+ENTRYPOINT ["dotnet", "Voya.API.dll"]
