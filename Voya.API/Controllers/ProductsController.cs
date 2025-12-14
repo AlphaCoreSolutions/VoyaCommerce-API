@@ -72,39 +72,57 @@ public class ProductsController : ControllerBase
 	[HttpGet("{id}")]
 	public async Task<ActionResult<ProductDto>> GetProductDetails(Guid id)
 	{
-		var product = await _context.Products
-			.Include(p => p.Category)
-			.Include(p => p.Store) // <--- LOAD STORE
-			.Include(p => p.Options)
-				.ThenInclude(o => o.Values) // <--- LOAD OPTIONS
-			.FirstOrDefaultAsync(p => p.Id == id);
+		try
+		{
+			var product = await _context.Products
+				.Include(p => p.Category)
+				.Include(p => p.Store)
+				.Include(p => p.Options)
+					.ThenInclude(o => o.Values)
+				.FirstOrDefaultAsync(p => p.Id == id);
 
-		if (product == null) return NotFound();
+			if (product == null) return NotFound(new { message = "Product not found" });
 
-		var dto = new ProductDto(
-			product.Id,
-			product.Name,
-			product.Description,
-			product.BasePrice,
-			product.DiscountPrice,
-			product.StockQuantity,
-			product.MainImageUrl,
-			product.GalleryImages,
-			product.Category.Name,
-			product.Options.Select(o => new ProductOptionDto(
-				o.Name,
-				o.Values.Select(v => new ProductOptionValueDto(v.Label, v.PriceModifier)).ToList()
-			)).ToList(),
-			product.Tags,
+			// SAFETY CHECK: If category is somehow missing in DB, provide a fallback
+			string categoryName = product.Category?.Name ?? "Uncategorized";
 
-			// --- MAP STORE INFO ---
-			product.StoreId,
-			product.Store?.Name ?? "Voya Store",
-			product.Store?.LogoUrl ?? "",
-			product.Store?.Rating ?? 5.0
-		);
+			// SAFETY CHECK: Handle null Store (e.g. products created before Store feature)
+			string sellerName = product.Store?.Name ?? "Voya Official";
+			string sellerAvatar = product.Store?.LogoUrl ?? "";
+			double sellerRating = product.Store?.Rating ?? 5.0;
 
-		return Ok(dto);
+			var dto = new ProductDto(
+				product.Id,
+				product.Name,
+				product.Description ?? "", // Handle null description
+				product.BasePrice,
+				product.DiscountPrice,
+				product.StockQuantity,
+				product.MainImageUrl ?? "",
+				product.GalleryImages ?? new List<string>(),
+				categoryName,
+				product.Options.Select(o => new ProductOptionDto(
+					o.Name,
+					o.Values.Select(v => new ProductOptionValueDto(v.Label, v.PriceModifier)).ToList()
+				)).ToList(),
+				product.Tags ?? new List<string>(),
+
+				// --- MAP STORE INFO ---
+				product.StoreId,
+				sellerName,
+				sellerAvatar,
+				sellerRating
+			);
+
+			return Ok(dto);
+		}
+		catch (Exception ex)
+		{
+			// Log the error to your console/cloud logs so you can see exactly what failed
+			Console.WriteLine($"ERROR in GetProductDetails: {ex.Message}");
+			Console.WriteLine(ex.StackTrace);
+			return StatusCode(500, new { message = "Internal Server Error", error = ex.Message });
+		}
 	}
 
 	// 3. VISUAL SEARCH (AI MOCK)
