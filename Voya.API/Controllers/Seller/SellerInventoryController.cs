@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using Voya.Application.DTOs;
 using Voya.Core.Entities;
-using Voya.Core.Enums; // If needed
+using Voya.Core.Enums;
 using Voya.Infrastructure.Persistence;
 
 namespace Voya.API.Controllers.Seller;
@@ -69,7 +69,7 @@ public class SellerInventoryController : ControllerBase
 			MainImageUrl = request.MainImageUrl,
 			GalleryImages = request.GalleryImages,
 			Tags = request.Tags,
-			CreatedAt = DateTime.UtcNow // Ensure Product entity has CreatedAt if not already
+			CreatedAt = DateTime.UtcNow
 		};
 
 		// Handle Options
@@ -82,7 +82,8 @@ public class SellerInventoryController : ControllerBase
 					Name = opt.Name,
 					Values = opt.Values.Select(v => new ProductOptionValue
 					{
-						Id = Guid.NewGuid().ToString().Substring(0, 8), // Simple ID
+						// FIX: Assign a Guid, not a String
+						Id = Guid.NewGuid(),
 						Label = v.Label,
 						PriceModifier = v.PriceModifier
 					}).ToList()

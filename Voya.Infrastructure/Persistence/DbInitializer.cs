@@ -444,11 +444,15 @@ public static class DbInitializer
 	{
 		var values = new List<ProductOptionValue>
 		{
-			new ProductOptionValue { Id = v1.ToLower().Replace(" ", ""), Label = v1, PriceModifier = p1 }
+            // Id is generated automatically by Guid.NewGuid() in the Entity constructor
+            new ProductOptionValue { Label = v1, PriceModifier = p1 }
 		};
 
-		if (v2 != null) values.Add(new ProductOptionValue { Id = v2.ToLower().Replace(" ", ""), Label = v2, PriceModifier = p2 });
-		if (v3 != null) values.Add(new ProductOptionValue { Id = v3.ToLower().Replace(" ", ""), Label = v3, PriceModifier = p3 });
+		if (v2 != null)
+			values.Add(new ProductOptionValue { Label = v2, PriceModifier = p2 });
+
+		if (v3 != null)
+			values.Add(new ProductOptionValue { Label = v3, PriceModifier = p3 });
 
 		return new ProductOption
 		{

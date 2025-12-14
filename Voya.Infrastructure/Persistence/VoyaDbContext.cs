@@ -1,8 +1,8 @@
 ﻿using System.Collections.Generic;
-using System.Linq; // Required for SequenceEqual
+using System.Linq;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking; // Required for ValueComparer
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Voya.Core.Entities;
 
 namespace Voya.Infrastructure.Persistence;
@@ -14,6 +14,7 @@ public class VoyaDbContext : DbContext
 	public DbSet<User> Users { get; set; }
 	public DbSet<Product> Products { get; set; }
 	public DbSet<ProductOption> ProductOptions { get; set; }
+	public DbSet<ProductOptionValue> ProductOptionValues { get; set; }
 	public DbSet<Category> Categories { get; set; }
 	public DbSet<Order> Orders { get; set; }
 	public DbSet<OrderItem> OrderItems { get; set; }
@@ -124,7 +125,7 @@ public class VoyaDbContext : DbContext
 				c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
 				c => c.ToList()));
 
-		// --- NEW: Product Tags ---
+		// Product Tags
 		modelBuilder.Entity<Product>()
 			.Property(p => p.Tags)
 			.HasConversion(
@@ -139,21 +140,16 @@ public class VoyaDbContext : DbContext
 		// 3. Configure Product -> Options
 		modelBuilder.Entity<Product>()
 			.HasMany(p => p.Options)
-			.WithOne()
+			.WithOne(o => o.Product) // Explicitly map back
 			.HasForeignKey(o => o.ProductId)
 			.OnDelete(DeleteBehavior.Cascade);
 
+		// --- FIX: Removed HasConversion for ProductOption.Values (It's a table now) ---
 		modelBuilder.Entity<ProductOption>()
-			.Property(o => o.Values)
-			.HasConversion(
-				v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
-				v => JsonSerializer.Deserialize<List<ProductOptionValue>>(v, (JsonSerializerOptions?)null) ?? new List<ProductOptionValue>()
-			)
-			.Metadata.SetValueComparer(new ValueComparer<List<ProductOptionValue>>(
-				// Deep comparison using JSON serialization to check if values changed
-				(c1, c2) => JsonSerializer.Serialize(c1, (JsonSerializerOptions?)null) == JsonSerializer.Serialize(c2, (JsonSerializerOptions?)null),
-				c => JsonSerializer.Serialize(c, (JsonSerializerOptions?)null).GetHashCode(),
-				c => JsonSerializer.Deserialize<List<ProductOptionValue>>(JsonSerializer.Serialize(c, (JsonSerializerOptions?)null), (JsonSerializerOptions?)null)!));
+			.HasMany(o => o.Values)
+			.WithOne(v => v.ProductOption)
+			.HasForeignKey(v => v.ProductOptionId)
+			.OnDelete(DeleteBehavior.Cascade);
 
 		// 4. Configure Category (Recursive)
 		modelBuilder.Entity<Category>()
@@ -172,10 +168,10 @@ public class VoyaDbContext : DbContext
 			.HasConversion<string>();
 
 		modelBuilder.Entity<Order>()
-		.HasMany(o => o.Items)
-		.WithOne(i => i.Order)
-		.HasForeignKey(i => i.OrderId)
-		.OnDelete(DeleteBehavior.Cascade);
+			.HasMany(o => o.Items)
+			.WithOne(i => i.Order)
+			.HasForeignKey(i => i.OrderId)
+			.OnDelete(DeleteBehavior.Cascade);
 
 		// Configure Indexes
 		modelBuilder.Entity<PaymentMethod>().HasIndex(p => p.UserId);
@@ -220,18 +216,18 @@ public class VoyaDbContext : DbContext
 				c => c.ToList()));
 
 		modelBuilder.Entity<Store>()
-	.HasIndex(s => s.OwnerId)
-	.IsUnique(); // One store per user (for now)
+			.HasIndex(s => s.OwnerId)
+			.IsUnique();
 
 		modelBuilder.Entity<Store>()
 			.Property(s => s.Status)
-			.HasConversion<string>(); // Save as string for readability
+			.HasConversion<string>();
 
 		modelBuilder.Entity<NexusRole>()
-		.Property(e => e.Permissions)
-		.HasConversion(
-			v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions)null!), // List -> String
-			v => System.Text.Json.JsonSerializer.Deserialize<List<string>>(v, (System.Text.Json.JsonSerializerOptions)null!) ?? new List<string>() // String -> List
-		);
+			.Property(e => e.Permissions)
+			.HasConversion(
+				v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions)null!),
+				v => System.Text.Json.JsonSerializer.Deserialize<List<string>>(v, (System.Text.Json.JsonSerializerOptions)null!) ?? new List<string>()
+			);
 	}
 }

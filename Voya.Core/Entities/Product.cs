@@ -4,7 +4,8 @@ using Voya.Core.Enums;
 
 using Voya.Core.Entities;
 using Voya.Core.Enums;
-using System.ComponentModel.DataAnnotations.Schema; // Add this
+using System.ComponentModel.DataAnnotations.Schema;
+using System.ComponentModel.DataAnnotations; // Add this
 
 public class Product
 {
@@ -39,17 +40,37 @@ public class Product
 	public string? RejectionReason { get; set; }
 }
 
+
+
 public class ProductOption
 {
+	[Key]
 	public Guid Id { get; set; } = Guid.NewGuid();
+
 	public Guid ProductId { get; set; }
+
+	// Navigation back to Product (Optional but good practice)
+	[ForeignKey("ProductId")]
+	public Product? Product { get; set; }
+
 	public string Name { get; set; } = string.Empty; // e.g., "Size", "Color"
-	public List<ProductOptionValue> Values { get; set; } = new();
+
+	// Navigation to Values
+	public virtual ICollection<ProductOptionValue> Values { get; set; } = new List<ProductOptionValue>();
 }
 
 public class ProductOptionValue
 {
-	public string Id { get; set; } = string.Empty; // e.g., "xl", "red"
-	public string Label { get; set; } = string.Empty; // e.g., "Extra Large"
+	[Key]
+	public Guid Id { get; set; } = Guid.NewGuid();
+
+	// Foreign Key to ProductOption
+	public Guid ProductOptionId { get; set; }
+
+	[ForeignKey("ProductOptionId")]
+	public ProductOption? ProductOption { get; set; }
+
+	// Data
+	public string Label { get; set; } = string.Empty; // e.g., "Small", "Red"
 	public decimal PriceModifier { get; set; } = 0;
 }
