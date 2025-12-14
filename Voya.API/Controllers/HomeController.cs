@@ -21,21 +21,49 @@ public class HomeController : ControllerBase
 	[HttpGet("feed")]
 	public async Task<ActionResult<HomeFeedDto>> GetFeed()
 	{
-		// 1. Get Flash Sales (Simulated by checking for DiscountPrice)
+		// 1. Get Flash Sales
 		var flashSales = await _context.Products
+			.Include(p => p.Store) // <--- CRITICAL: Load Store data
 			.Where(p => p.DiscountPrice != null)
 			.Take(5)
-			.Select(p => new ProductListDto(p.Id, p.Name, p.BasePrice, p.DiscountPrice, p.MainImageUrl, 4.9))
+			.Select(p => new ProductListDto(
+				p.Id,
+				p.Name,
+				p.BasePrice,
+				p.DiscountPrice,
+				p.MainImageUrl,
+				4.9,
+
+				// --- NEW FIELDS MAPPED ---
+				p.StoreId,
+				p.Store != null ? p.Store.Name : "Voya Store",
+				p.Store != null ? (p.Store.LogoUrl ?? "") : "",
+				p.Store != null ? p.Store.Rating : 5.0
+			))
 			.ToListAsync();
 
-		// 2. Get Highlights (Random or newest items)
+		// 2. Get Highlights
 		var highlights = await _context.Products
-			.OrderByDescending(p => p.Id) // Simple sort by "newest" roughly
+			.Include(p => p.Store) // <--- CRITICAL: Load Store data
+			.OrderByDescending(p => p.Id)
 			.Take(10)
-			.Select(p => new ProductListDto(p.Id, p.Name, p.BasePrice, p.DiscountPrice, p.MainImageUrl, 4.5))
+			.Select(p => new ProductListDto(
+				p.Id,
+				p.Name,
+				p.BasePrice,
+				p.DiscountPrice,
+				p.MainImageUrl,
+				4.5,
+
+				// --- NEW FIELDS MAPPED ---
+				p.StoreId,
+				p.Store != null ? p.Store.Name : "Voya Store",
+				p.Store != null ? (p.Store.LogoUrl ?? "") : "",
+				p.Store != null ? p.Store.Rating : 5.0
+			))
 			.ToListAsync();
 
-		// 3. Static Banners for now
+		// 3. Static Banners
 		var banners = new List<string>
 		{
 			"https://placehold.co/600x200/orange/white?text=Summer+Sale",
@@ -49,7 +77,7 @@ public class HomeController : ControllerBase
 			flashSales,
 			highlights,
 			banners,
-			FlashSaleEndTime: endOfToday // Sends exact sync time
+			FlashSaleEndTime: endOfToday
 		));
 	}
 }
