@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Voya.Infrastructure.Persistence;
@@ -12,9 +13,11 @@ using Voya.Infrastructure.Persistence;
 namespace Voya.Infrastructure.Migrations
 {
     [DbContext(typeof(VoyaDbContext))]
-    partial class VoyaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251214173148_SyncCloudSchema")]
+    partial class SyncCloudSchema
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
