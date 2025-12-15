@@ -11,6 +11,7 @@ public static class DbInitializer
 		context.Database.EnsureCreated();
 
 		// 2. Check if we already have data
+
 		if (context.Products.Any())
 		{
 			return; // DB has been seeded
