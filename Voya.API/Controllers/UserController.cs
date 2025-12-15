@@ -21,20 +21,26 @@ public class UserController : ControllerBase
 	[HttpGet("profile")]
 	public async Task<IActionResult> GetProfile()
 	{
-		var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+		// Parse ID safely
+		var userIdStr = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+		if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
 
-		var user = await _context.Users
-			.Select(u => new
-			{
-				u.Id,
-				u.FullName,
-				u.Email,
-				u.PointsBalance,
-				u.CurrentStreak,
-				u.IsGoldMember
-			})
-			.FirstOrDefaultAsync(u => u.Id == userId);
+		// Fetch User
+		var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
+		if (user == null) return NotFound();
 
-		return Ok(user);
+		// Return exact structure expected by Flutter
+		return Ok(new
+		{
+			user.Id,
+			user.FullName,
+			user.Email,
+			user.AvatarUrl,          // Added
+			user.PointsBalance,
+			user.CurrentStreak,
+			user.IsGoldMember,
+			user.ReferralCode,       // Added
+			user.MemberDiscountPercent // Added
+		});
 	}
 }
