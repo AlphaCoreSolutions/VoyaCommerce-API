@@ -26,46 +26,63 @@ public class AuthController : ControllerBase
 	[HttpPost("register")]
 	public async Task<IActionResult> Register(RegisterRequest request)
 	{
-		if (await _context.Users.AnyAsync(u => u.Email == request.Email))
-			return BadRequest("User exists.");
-
-		// Generate a unique referral code for this new user
-		string myReferralCode = request.FullName.Replace(" ", "").ToUpper()[..3] + new Random().Next(100, 999);
-
-		var user = new User
+		try
 		{
-			Email = request.Email,
-			FullName = request.FullName,
-			PasswordHash = _passwordHasher.HashPassword(request.Password),
-			PointsBalance = 10,
-			ReferralCode = myReferralCode
-		};
+			if (await _context.Users.AnyAsync(u => u.Email == request.Email))
+				return BadRequest("User already exists.");
 
-		// === REFERRAL LOGIC ===
-		if (!string.IsNullOrEmpty(request.ReferralCode))
-		{
-			var referrer = await _context.Users.FirstOrDefaultAsync(u => u.ReferralCode == request.ReferralCode);
-			if (referrer != null)
+			// 1. SAFE REFERRAL GENERATION (Fixes crash on short names)
+			var cleanName = request.FullName.Replace(" ", "").ToUpper();
+			// If name is "Al", pad it to "ALX"; if "Moe", keep "MOE"
+			var prefix = cleanName.Length >= 3 ? cleanName[..3] : cleanName.PadRight(3, 'X');
+			string myReferralCode = prefix + new Random().Next(100, 999);
+
+			var user = new User
 			{
-				// Link them
-				user.ReferredByUserId = referrer.Id;
+				Email = request.Email,
+				FullName = request.FullName,
+				PasswordHash = _passwordHasher.HashPassword(request.Password),
+				PointsBalance = 10,
+				ReferralCode = myReferralCode,
 
-				// Bonus for New User
-				user.PointsBalance += 50;
+				// 2. SET DEFAULTS (Fixes DB Constraint Errors)
+				CreatedAt = DateTime.UtcNow,
+				IsActive = true,
+				IsGoldMember = false,
+				CurrentStreak = 0,
+				AvatarUrl = "",
+				PhoneNumber = ""
+			};
 
-				// Bonus for Referrer
-				referrer.PointsBalance += 50;
-
-				// (Optional) Notify Referrer
-				// _notificationService.Notify(referrer.Id, "You invited a friend! +50 Points");
+			// 3. REFERRAL LOGIC
+			if (!string.IsNullOrEmpty(request.ReferralCode))
+			{
+				var referrer = await _context.Users.FirstOrDefaultAsync(u => u.ReferralCode == request.ReferralCode);
+				if (referrer != null)
+				{
+					user.ReferredByUserId = referrer.Id;
+					user.PointsBalance += 50;
+					referrer.PointsBalance += 50;
+				}
 			}
+
+			_context.Users.Add(user);
+			await _context.SaveChangesAsync();
+
+			var token = _jwtTokenGenerator.GenerateAccessToken(user.Id, user.Email, user.IsGoldMember);
+			return Ok(new AuthResponse(user.Id, user.Email, token));
 		}
-
-		_context.Users.Add(user);
-		await _context.SaveChangesAsync();
-
-		var token = _jwtTokenGenerator.GenerateAccessToken(user.Id, user.Email, user.IsGoldMember);
-		return Ok(new AuthResponse(user.Id, user.Email, token));
+		catch (Exception ex)
+		{
+			// 4. EXPOSE THE REAL ERROR
+			// This allows us to see "Relation 'Wallets' does not exist" or similar in the API response
+			return StatusCode(500, new
+			{
+				message = "Registration Failed",
+				error = ex.Message,
+				inner = ex.InnerException?.Message
+			});
+		}
 	}
 
 	[AllowAnonymous]
@@ -80,27 +97,17 @@ public class AuthController : ControllerBase
 
 		var token = _jwtTokenGenerator.GenerateAccessToken(user.Id, user.Email, user.IsGoldMember);
 
-		// RETURN: Core Data + Gamification Stats
-		// EXCLUDE: Orders, Addresses, PasswordHash
 		return Ok(new
 		{
 			id = user.Id,
 			email = user.Email,
 			fullName = user.FullName,
-			avatarUrl = user.AvatarUrl, // Nullable
-
-			// Gamification & Loyalty
+			avatarUrl = user.AvatarUrl,
 			pointsBalance = user.PointsBalance,
 			isGoldMember = user.IsGoldMember,
 			currentStreak = user.CurrentStreak,
-
-			// Referral
 			referralCode = user.ReferralCode,
-
-			// Computed Logic (sent as value)
 			memberDiscountPercent = user.MemberDiscountPercent,
-
-			// JWT
 			token = token
 		});
 	}

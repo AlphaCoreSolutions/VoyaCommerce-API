@@ -50,4 +50,5 @@ public class User
 	public string? BanReason { get; set; }
 	public decimal WalletBalance { get; set; } = 0; // Internal Wallet
 	public double TrustScore { get; set; } = 100.0; // Default 100
+	public bool IsActive { get; set; }
 }
