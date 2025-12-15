@@ -2,7 +2,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Voya.Application.DTOs;
 using Voya.Core.Entities;
 using Voya.Infrastructure.Persistence;
 
@@ -22,8 +21,7 @@ public class GamificationController : ControllerBase
 
 	private Guid GetUserId() => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
 
-	// DTO for the request
-	public record PlayGameRequest(string GameId); // e.g., "spin_wheel"
+	public record PlayGameRequest(string GameId);
 
 	[HttpPost("play")]
 	public async Task<IActionResult> PlayGame(PlayGameRequest request)
@@ -44,176 +42,97 @@ public class GamificationController : ControllerBase
 		// 2. Check Limit (Max 3 games per day)
 		if (user.DailyGameCount >= 3)
 		{
-			// Calculate time until reset (tomorrow midnight)
+			// Calculate time until reset
 			var tomorrow = today.AddDays(1);
 			var timeRemaining = tomorrow - DateTime.UtcNow;
-			return BadRequest($"Daily limit reached! You can play again in {timeRemaining.Hours}h {timeRemaining.Minutes}m.");
+			return StatusCode(403, $"Daily limit reached! Next play in {timeRemaining.Hours}h {timeRemaining.Minutes}m.");
 		}
 
-		// 3. Play the Game (Weighted Random Logic)
-		// Logic: 
-		// - 5 to 20 points: Very Common (~90%)
-		// - 21 to 45 points: Rare (~9%)
-		// - 46 to 50 points: Legendary (~1%)
-
+		// 3. Determine Reward Type (1 in 8 Chance for Voucher)
 		var random = new Random();
-		int roll = random.Next(1, 101); // 1-100
-		int pointsWon = 0;
+		bool wonVoucher = random.Next(1, 9) == 1; // Returns 1 to 8. If 1, Win Voucher.
 
-		if (roll <= 90)
+		string rewardType = "Points";
+		string rewardValue = "";
+		string message = "";
+
+		if (wonVoucher)
 		{
-			// Common: 5 to 20
-			pointsWon = random.Next(5, 21);
-		}
-		else if (roll <= 99)
-		{
-			// Rare: 21 to 45
-			pointsWon = random.Next(21, 46);
+			// === VOUCHER REWARD LOGIC ===
+			rewardType = "Voucher";
+
+			// Generate a unique code (e.g., GAME-X7Z9)
+			string code = $"WIN-{Guid.NewGuid().ToString().Substring(0, 4).ToUpper()}";
+
+			// Randomize Discount: 10% to 30%
+			int discountPercent = random.Next(10, 31);
+
+			// Create the Voucher Entity
+			var voucher = new Voucher
+			{
+				Code = code,
+				Description = $"Won in {request.GameId}",
+				Type = DiscountType.Percentage,
+				Value = discountPercent,
+				StartDate = DateTime.UtcNow,
+				EndDate = DateTime.UtcNow.AddDays(7), // Valid for 7 days
+				IsActive = true,
+				MaxUses = 1,
+				MaxUsesPerUser = 1
+			};
+
+			// Link to User
+			var userVoucher = new UserVoucher
+			{
+				UserId = userId,
+				Voucher = voucher, // EF Core handles ID assignment
+				UsageCount = 0
+			};
+
+			_context.Vouchers.Add(voucher);
+			_context.UserVouchers.Add(userVoucher);
+
+			rewardValue = code;
+			message = $"Jackpot! You won a {discountPercent}% OFF Voucher: {code}";
 		}
 		else
 		{
-			// Legendary: 46 to 50
-			pointsWon = random.Next(46, 51);
+			// === POINTS REWARD LOGIC ===
+			// Give 5 to 25 Points
+			int pointsWon = random.Next(5, 26); // 26 is exclusive
+
+			user.PointsBalance += pointsWon;
+
+			rewardType = "Points";
+			rewardValue = pointsWon.ToString();
+			message = $"You won {pointsWon} Points!";
 		}
 
-		// 4. Update User
-		user.PointsBalance += pointsWon;
+		// 4. Update User Stats
 		user.DailyGameCount++;
 		user.LastGameDate = DateTime.UtcNow;
 
-		// 5. Save History (Analytics)
+		// 5. Save History
 		var history = new GameHistory
 		{
 			UserId = userId,
 			GameName = request.GameId,
-			PointsEarned = pointsWon,
+			PointsEarned = rewardType == "Points" ? int.Parse(rewardValue) : 0,
 			PlayedAt = DateTime.UtcNow
 		};
 		_context.GameHistories.Add(history);
 
 		await _context.SaveChangesAsync();
 
+		// 6. Return Result
 		return Ok(new
 		{
 			Success = true,
 			Game = request.GameId,
-			PointsWon = pointsWon,
-			TotalPoints = user.PointsBalance,
-			GamesPlayedToday = user.DailyGameCount,
+			RewardType = rewardType, // "Points" or "Voucher"
+			RewardValue = rewardValue, // "15" or "GAME-X9Z"
+			Message = message,
 			GamesRemaining = 3 - user.DailyGameCount
 		});
-	}
-
-	// NEW Endpoint: Admin Analytics (Simple version)
-	[HttpGet("history")]
-	public async Task<ActionResult> GetMyGameHistory()
-	{
-		var userId = GetUserId();
-		var history = await _context.GameHistories
-			.Where(g => g.UserId == userId)
-			.OrderByDescending(g => g.PlayedAt)
-			.Take(20) // Last 20 games
-			.Select(g => new
-			{
-				g.GameName,
-				g.PointsEarned,
-				Date = g.PlayedAt.ToString("yyyy-MM-dd HH:mm")
-			})
-			.ToListAsync();
-
-		return Ok(history);
-	}
-
-	[HttpPost("check-in")]
-	public async Task<ActionResult<CheckInResponse>> DailyCheckIn()
-	{
-		var userId = GetUserId();
-		var user = await _context.Users.FindAsync(userId);
-
-		if (user == null) return Unauthorized();
-
-		var today = DateTime.UtcNow.Date;
-		var lastCheckIn = user.LastCheckInDate?.Date;
-
-		// 1. Check if already checked in today
-		if (lastCheckIn == today)
-		{
-			return BadRequest("You have already checked in today!");
-		}
-
-		// 2. Calculate Streak
-		bool isConsecutive = lastCheckIn.HasValue && lastCheckIn == today.AddDays(-1);
-		if (isConsecutive)
-		{
-			user.CurrentStreak++;
-		}
-		else
-		{
-			user.CurrentStreak = 1; // Reset streak
-		}
-
-		user.LastCheckInDate = DateTime.UtcNow;
-
-		// 3. Determine Reward
-		int points = 10; // Standard reward
-		bool bigPrize = false;
-		string msg = "Daily check-in successful! +10 Points.";
-
-		// Big Prize every 7 days
-		if (user.CurrentStreak % 7 == 0)
-		{
-			points = 100;
-			bigPrize = true;
-			msg = "WOW! 7-Day Streak! You earned 100 Points!";
-		}
-
-		user.PointsBalance += points;
-		await _context.SaveChangesAsync();
-
-		return Ok(new CheckInResponse(true, points, user.CurrentStreak, msg, bigPrize));
-	}
-
-	[HttpPost("mystery-box")]
-	public async Task<ActionResult<MysteryBoxResponse>> OpenMysteryBox()
-	{
-		var userId = GetUserId();
-		var user = await _context.Users.FindAsync(userId);
-
-		// Cost to open box? Let's say it's free once a day, or costs 50 points.
-		// For this MVP, let's make it cost 50 points.
-		if (user!.PointsBalance < 50)
-		{
-			return BadRequest("Not enough points! You need 50 points to open a Mystery Box.");
-		}
-
-		user.PointsBalance -= 50;
-
-		// Random Prize Logic
-		var random = new Random();
-		var roll = random.Next(1, 101); // 1 to 100
-
-		string type;
-		string value;
-		string message;
-
-		if (roll > 90) // 10% Chance of Coupon
-		{
-			type = "Coupon";
-			value = "LUCKY" + random.Next(1000, 9999);
-			message = $"Jackpot! You won a coupon code: {value}";
-			// In a real app, save this coupon to a 'UserCoupons' table here
-		}
-		else // 90% Chance of returning points (sometimes more, sometimes less)
-		{
-			type = "Points";
-			int pointsWon = random.Next(10, 100); // Win back 10 to 100 points
-			value = pointsWon.ToString();
-			message = $"You won {pointsWon} points!";
-			user.PointsBalance += pointsWon;
-		}
-
-		await _context.SaveChangesAsync();
-
-		return Ok(new MysteryBoxResponse(true, type, value, message));
 	}
 }
