@@ -27,23 +27,46 @@ public class ProductsController : ControllerBase
 		[FromQuery] int limit = 20)
 	{
 		var query = _context.Products
-			.Include(p => p.Store) // <--- CRITICAL: Fetch Store Data
+			.Include(p => p.Store)
 			.AsQueryable();
 
 		if (!string.IsNullOrEmpty(search))
 		{
 			var term = search.ToLower().Trim();
-			// Note: .Any() on Tags only works if configured correctly in DbContext or via value conversion
 			query = query.Where(p =>
 				p.Name.ToLower().Contains(term) ||
 				p.Description.ToLower().Contains(term)
 			);
 		}
 
+		// --- FIX: CATEGORY HIERARCHY LOGIC ---
 		if (categoryId.HasValue)
 		{
-			query = query.Where(p => p.CategoryId == categoryId);
+			// 1. Start with the requested ID
+			var categoryIdsToCheck = new List<Guid> { categoryId.Value };
+
+			// 2. Get Direct Children (Level 1)
+			var childIds = await _context.Categories
+				.Where(c => c.ParentId == categoryId.Value)
+				.Select(c => c.Id)
+				.ToListAsync();
+
+			categoryIdsToCheck.AddRange(childIds);
+
+			// 3. Get Grandchildren (Level 2) - e.g. Electronics -> Laptops -> Gaming Laptops
+			if (childIds.Any())
+			{
+				var grandChildIds = await _context.Categories
+					.Where(c => c.ParentId != null && childIds.Contains(c.ParentId.Value))
+					.Select(c => c.Id)
+					.ToListAsync();
+				categoryIdsToCheck.AddRange(grandChildIds);
+			}
+
+			// 4. Filter products matching ANY of these IDs
+			query = query.Where(p => categoryIdsToCheck.Contains(p.CategoryId));
 		}
+		// -------------------------------------
 
 		var products = await query
 			.Skip((page - 1) * limit)
@@ -54,9 +77,7 @@ public class ProductsController : ControllerBase
 				p.BasePrice,
 				p.DiscountPrice,
 				p.MainImageUrl,
-				4.8, // Product Rating (Placeholder until Review system is fully linked)
-
-				// --- MAPPED STORE DATA ---
+				4.8,
 				p.StoreId,
 				p.Store != null ? p.Store.Name : "Voya Store",
 				p.Store != null ? (p.Store.LogoUrl ?? "") : "",
