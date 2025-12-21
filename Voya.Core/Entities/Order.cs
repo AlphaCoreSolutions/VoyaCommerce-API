@@ -2,7 +2,6 @@
 
 namespace Voya.Core.Entities;
 
-// ADDED 'Refunded' to the Enum
 public enum OrderStatus
 {
 	Pending,
@@ -28,7 +27,8 @@ public class Order
 	// Links multiple orders together if split from one cart
 	public string? GroupTransactionId { get; set; }
 
-	public Guid ShippingAddressId { get; set; }
+	// Nullable because in split shipments, addresses are defined per Shipment
+	public Guid? ShippingAddressId { get; set; }
 
 	public PaymentType PaymentType { get; set; } = PaymentType.CreditCard;
 	public Guid? PaymentMethodId { get; set; }
@@ -47,7 +47,7 @@ public class Order
 	public int PointsRedeemed { get; set; }
 	public decimal TotalAmount { get; set; }
 
-	// Tracking
+	// Legacy Tracking (For single shipments). For splits, check Shipments collection.
 	public string? TrackingNumber { get; set; }
 	public string? Carrier { get; set; }
 
@@ -60,6 +60,11 @@ public class Order
 	public string? GiftWrapName { get; set; }
 	public decimal GiftWrapPrice { get; set; }
 
+	// === NEW: Multi-Shipment Logic ===
+	// An order is composed of 1 or more shipments (boxes)
+	public ICollection<Shipment> Shipments { get; set; } = new List<Shipment>();
+
+	// This remains to easily access all items without traversing shipments
 	public ICollection<OrderItem> Items { get; set; } = new List<OrderItem>();
 }
 
@@ -70,11 +75,16 @@ public class OrderItem
 	public Guid OrderId { get; set; }
 	public Order Order { get; set; } = null!;
 
+	// === NEW: Link to specific Shipment (Box) ===
+	public Guid? ShipmentId { get; set; }
+	public Shipment? Shipment { get; set; }
+
 	public Guid ProductId { get; set; }
 	public Product? Product { get; set; }
 
 	// Snapshot Data
 	public string ProductName { get; set; } = string.Empty;
+	public string MainImage { get; set; } = string.Empty; // Added based on controller needs
 	public decimal UnitPrice { get; set; }
 	public int Quantity { get; set; }
 	public string? SelectedOptionsJson { get; set; }

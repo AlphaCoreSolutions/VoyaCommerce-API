@@ -22,12 +22,18 @@ public class OrdersController : ControllerBase
 	private readonly VoyaDbContext _context;
 	private readonly IHubContext<LiveHub> _hubContext;
 
+	// === NEW: Constant for the Automation Switch Key ===
+	private const string AUCTION_AUTO_PAYOUT_KEY = "Auctions.AutoReleaseEnabled";
+
 	public OrdersController(VoyaDbContext context, IHubContext<LiveHub> hubContext)
 	{
 		_context = context;
 		_hubContext = hubContext;
 	}
 
+	// ==================================================================================
+	// 1. CHECKOUT (Updated for Logistics & Shipments)
+	// ==================================================================================
 	[HttpPost("checkout")]
 	public async Task<IActionResult> Checkout([FromBody] CheckoutRequest request)
 	{
@@ -36,13 +42,11 @@ public class OrdersController : ControllerBase
 		{
 			var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")!.Value);
 
-			// 1. Get User (MOVED TO TOP)
+			// 1. Get User
 			var user = await _context.Users.FindAsync(userId);
 			if (user == null) return Unauthorized();
 
-			// 2. Validate Address
-			// If Multi-Address is true, we validate specific addresses in the loop later.
-			// If Single-Address, we validate here.
+			// 2. Validate Address (Single Mode)
 			Address? singleAddress = null;
 			if (!request.IsMultiAddress)
 			{
@@ -59,7 +63,7 @@ public class OrdersController : ControllerBase
 
 			if (cart == null || !cart.Items.Any()) return BadRequest("Cart is empty");
 
-			// 4. Prepare Order Groups
+			// 4. Prepare Order Groups (Split by Address)
 			var orderGroups = new Dictionary<Guid, List<CartItem>>();
 
 			if (!request.IsMultiAddress)
@@ -122,6 +126,7 @@ public class OrdersController : ControllerBase
 				var orderTotalAfterMember = orderSubTotal - memberDiscount;
 				decimal giftCost = giftWrap?.Price ?? 0;
 
+				// A. Create Order
 				var order = new Order
 				{
 					Id = Guid.NewGuid(),
@@ -142,20 +147,44 @@ public class OrdersController : ControllerBase
 					GiftMessage = request.GiftMessage,
 					GiftWrapOptionId = giftWrap?.Id,
 					GiftWrapName = giftWrap?.Name,
-					GiftWrapPrice = giftCost,
-					Items = items.Select(i => new OrderItem
-					{
-						ProductId = i.ProductId,
-						ProductName = i.Product.Name,
-						Quantity = i.Quantity,
-						UnitPrice = i.Product.BasePrice,
-						SelectedOptionsJson = i.SelectedOptionsJson
-					}).ToList()
+					GiftWrapPrice = giftCost
 				};
 
-				// Deduct Stock
+				// B. Create Shipment (Logistics Record)
+				var shipment = new Shipment
+				{
+					Id = Guid.NewGuid(),
+					OrderId = order.Id,
+					AddressId = address.Id,
+					Status = ShipmentStatus.Pending,
+					ShippingCost = 5.00m,
+					CurrentLocation = "Warehouse",
+					CreatedAt = DateTime.UtcNow,
+					EstimatedDeliveryTime = DateTime.UtcNow.AddDays(3)
+				};
+
+				order.Shipments.Add(shipment);
+
+				// C. Create OrderItems
+				var orderItems = items.Select(i => new OrderItem
+				{
+					OrderId = order.Id,
+					ShipmentId = shipment.Id,
+					ProductId = i.ProductId,
+					ProductName = i.Product.Name,
+					Quantity = i.Quantity,
+					UnitPrice = i.Product.BasePrice,
+					SelectedOptionsJson = i.SelectedOptionsJson
+				}).ToList();
+
+				order.Items = orderItems;
+
+				// D. Deduct Stock
 				foreach (var item in items)
 				{
+					if (item.Product.StockQuantity < item.Quantity)
+						return BadRequest($"Insufficient stock for {item.Product.Name}");
+
 					item.Product.StockQuantity -= item.Quantity;
 				}
 
@@ -166,7 +195,7 @@ public class OrdersController : ControllerBase
 				grandTotalFinal += (orderTotalAfterMember + giftCost);
 			}
 
-			// --- GLOBAL DISCOUNTS (Voucher & Points) ---
+			// --- GLOBAL DISCOUNTS ---
 			decimal voucherDiscount = 0;
 			decimal pointsDiscount = 0;
 			int pointsRedeemed = 0;
@@ -203,7 +232,6 @@ public class OrdersController : ControllerBase
 
 			var totalAfterVoucher = grandTotalFinal - voucherDiscount;
 
-			// Points Redemption
 			if (request.UsePoints && user.PointsBalance > 0 && totalAfterVoucher > 0)
 			{
 				const decimal POINTS_VALUE_RATE = 0.001m;
@@ -224,15 +252,16 @@ public class OrdersController : ControllerBase
 			var finalAmountToPay = Math.Max(0, totalAfterVoucher - pointsDiscount);
 
 			// --- UPDATE ORDER TOTALS ---
+			bool discountsApplied = false;
 			foreach (var order in createdOrders)
 			{
-				// Simplified: Assign global discount to first order for DB record
-				if (order == createdOrders.First())
+				if (!discountsApplied)
 				{
 					order.VoucherDiscount = voucherDiscount;
 					order.PointsDiscount = pointsDiscount;
 					order.PointsRedeemed = pointsRedeemed;
 					order.TotalAmount = Math.Max(0, (order.SubTotal + order.GiftWrapPrice) - voucherDiscount - pointsDiscount);
+					discountsApplied = true;
 				}
 				else
 				{
@@ -242,7 +271,7 @@ public class OrdersController : ControllerBase
 				if (finalAmountToPay == 0) order.PaymentStatus = PaymentStatus.Paid;
 			}
 
-			// --- LOYALTY POINTS EARNING LOGIC (Moved Here) ---
+			// --- LOYALTY ---
 			var globalMultiplierSetting = await _context.GlobalSettings
 				.FirstOrDefaultAsync(s => s.Key == "Loyalty.PointsMultiplier");
 
@@ -250,17 +279,24 @@ public class OrdersController : ControllerBase
 			if (globalMultiplierSetting != null)
 				double.TryParse(globalMultiplierSetting.Value, out multiplier);
 
-			// User earns points based on final amount paid
 			int pointsEarned = (int)(finalAmountToPay * 10 * (decimal)multiplier);
 			user.PointsBalance += pointsEarned;
 
 			// --- DB UPDATES ---
 			if (pointsRedeemed > 0) user.PointsBalance -= pointsRedeemed;
 
-			if (userVoucherToUpdate != null) { userVoucherToUpdate.UsageCount++; _context.UserVouchers.Update(userVoucherToUpdate); }
-			else if (voucherToAutoClaim != null) { _context.UserVouchers.Add(new UserVoucher { UserId = userId, VoucherId = voucherToAutoClaim.Id, UsageCount = 1, DateClaimed = DateTime.UtcNow }); }
+			if (userVoucherToUpdate != null)
+			{
+				userVoucherToUpdate.UsageCount++;
+				_context.UserVouchers.Update(userVoucherToUpdate);
+			}
+			else if (voucherToAutoClaim != null)
+			{
+				_context.UserVouchers.Add(new UserVoucher { UserId = userId, VoucherId = voucherToAutoClaim.Id, UsageCount = 1, DateClaimed = DateTime.UtcNow });
+			}
 
 			_context.Carts.Remove(cart);
+
 			await _context.SaveChangesAsync();
 			await transaction.CommitAsync();
 
@@ -276,10 +312,124 @@ public class OrdersController : ControllerBase
 		catch (Exception ex)
 		{
 			await transaction.RollbackAsync();
-			Console.WriteLine(ex);
 			return StatusCode(500, "Error processing checkout: " + ex.Message);
 		}
 	}
+
+	// ==================================================================================
+	// 2. ORDER STATUS & AUCTION SETTLEMENT (UPDATED WITH KILL SWITCH)
+	// ==================================================================================
+	[HttpPut("{id}/status")]
+	public async Task<IActionResult> UpdateOrderStatus(Guid id, [FromBody] string newStatusRaw)
+	{
+		if (!Enum.TryParse<OrderStatus>(newStatusRaw, true, out var newStatus))
+			return BadRequest("Invalid status.");
+
+		var order = await _context.Orders
+			.Include(o => o.Items).ThenInclude(i => i.Product)
+			.FirstOrDefaultAsync(o => o.Id == id);
+
+		if (order == null) return NotFound("Order not found.");
+
+		var oldStatus = order.Status;
+		order.Status = newStatus;
+
+		// --- NOTIFICATIONS ---
+		if (newStatus == OrderStatus.Delivered && oldStatus != OrderStatus.Delivered)
+		{
+			var notif = new Notification
+			{
+				UserId = order.UserId,
+				Title = "Order Delivered! 📦",
+				Body = $"Your order #{order.Id.ToString()[..8]} has been delivered.",
+				Type = "ReviewPrompt",
+				RelatedEntityId = order.Id.ToString(),
+				CreatedAt = DateTime.UtcNow
+			};
+			_context.Notifications.Add(notif);
+
+			await _hubContext.Clients.Group(order.UserId.ToString())
+				.SendAsync("ReceiveNotification", notif.Title, notif.Body);
+
+			// === CRITICAL: RELEASE FUNDS FOR AUCTION ITEMS ===
+			// 1. Check Global Automation Setting (Kill Switch)
+			var autoPayoutSetting = await _context.GlobalSettings
+				.FirstOrDefaultAsync(s => s.Key == AUCTION_AUTO_PAYOUT_KEY);
+
+			// Default to TRUE (Enabled) if setting is missing
+			bool isAutomationEnabled = autoPayoutSetting == null || bool.Parse(autoPayoutSetting.Value);
+
+			if (isAutomationEnabled)
+			{
+				await ReleaseAuctionFunds(order);
+			}
+			else
+			{
+				// Automation is DISABLED. 
+				// Money is held safely. Admin must release manually via NexusFinanceController.
+			}
+		}
+		else if (newStatus == OrderStatus.Shipped && oldStatus != OrderStatus.Shipped)
+		{
+			var notif = new Notification
+			{
+				UserId = order.UserId,
+				Title = "Order Shipped! 🚚",
+				Body = $"Order #{order.Id.ToString()[..8]} is on the way.",
+				Type = "OrderUpdate",
+				RelatedEntityId = order.Id.ToString()
+			};
+			_context.Notifications.Add(notif);
+		}
+
+		await _context.SaveChangesAsync();
+		return Ok(new { Message = "Status updated" });
+	}
+
+	private async Task ReleaseAuctionFunds(Order order)
+	{
+		// 1. Check if order contains auction item
+		var auctionItem = order.Items.FirstOrDefault();
+		if (auctionItem == null) return;
+
+		// 2. Find associated Auction that was 'Sold'
+		var auction = await _context.Auctions
+			.FirstOrDefaultAsync(a => a.ProductId == auctionItem.ProductId && a.Status == AuctionStatus.Sold);
+
+		if (auction != null && auction.SellerId != Guid.Empty)
+		{
+			// 3. Calculate Payout (e.g. 5% platform fee)
+			decimal platformFeeRate = 0.05m;
+			decimal grossAmount = order.TotalAmount;
+			decimal fee = grossAmount * platformFeeRate;
+			decimal netPayout = grossAmount - fee;
+
+			// 4. Credit Seller
+			var seller = await _context.Users.FindAsync(auction.SellerId);
+			if (seller != null)
+			{
+				seller.WalletBalance += netPayout;
+
+				// Using the unified WalletTransaction entity (works for Users and Stores)
+				var transaction = new WalletTransaction
+				{
+					UserId = seller.Id,
+					StoreId = null, // User-to-User sale (null StoreId)
+					Amount = netPayout,
+					Type = TransactionType.AuctionSale,
+					Description = $"Auction Payout: {auctionItem.ProductName} (Order #{order.Id.ToString()[..8]})",
+					OrderId = order.Id,
+					Date = DateTime.UtcNow
+				};
+
+				_context.WalletTransactions.Add(transaction);
+			}
+		}
+	}
+
+	// ==================================================================================
+	// 3. STANDARD CRUD ENDPOINTS
+	// ==================================================================================
 
 	[HttpGet]
 	public async Task<IActionResult> GetMyOrders()
@@ -300,6 +450,7 @@ public class OrdersController : ControllerBase
 				o.ShippingAddressJson,
 				o.IsGift,
 				ItemsCount = o.Items.Count,
+				ShipmentId = o.Shipments.FirstOrDefault().Id,
 				Items = o.Items.Select(i => new { i.ProductName, i.Quantity, i.UnitPrice })
 			})
 			.ToListAsync();
@@ -307,156 +458,26 @@ public class OrdersController : ControllerBase
 		return Ok(orders);
 	}
 
-	// GET: api/v1/orders/{id}/detailed
 	[HttpGet("{id}/detailed")]
 	[RequirePermission(Permissions.OrdersView)]
 	public async Task<IActionResult> GetOrderDetails(Guid id)
 	{
 		var order = await _context.Orders
-			.Include(o => o.Items)
-			.ThenInclude(i => i.Product)
+			.Include(o => o.Items).ThenInclude(i => i.Product)
 			.Include(o => o.User)
 			.FirstOrDefaultAsync(o => o.Id == id);
 
 		if (order == null) return NotFound();
 
-		// Mocking a Timeline based on status (In real app, query an OrderEvents table)
 		var timeline = new List<object>
 		{
 			new { Title = "Order Placed", Time = order.PlacedAt, IsCompleted = true },
-			new { Title = "Payment Verified", Time = order.PlacedAt.AddMinutes(2), IsCompleted = true },
 			new { Title = "Processing", Time = (DateTime?)null, IsCompleted = order.Status >= OrderStatus.Processing },
 			new { Title = "Shipped", Time = (DateTime?)null, IsCompleted = order.Status >= OrderStatus.Shipped },
 			new { Title = "Delivered", Time = (DateTime?)null, IsCompleted = order.Status == OrderStatus.Delivered }
 		};
 
 		return Ok(new { Order = order, Timeline = timeline });
-	}
-
-	// POST: api/v1/orders/{id}/refund
-	[HttpPost("{id}/refund")]
-	[RequirePermission(Permissions.FinanceRefund)]
-	public async Task<IActionResult> TriggerRefund(Guid id)
-	{
-		var order = await _context.Orders.FindAsync(id);
-		if (order == null) return NotFound();
-
-		// Refund Logic (Stripe/PayPal integration would go here)
-		order.Status = OrderStatus.Refunded;
-		order.PaymentStatus = PaymentStatus.Refunded;
-
-		await _context.SaveChangesAsync();
-		return Ok("Refund processed successfully.");
-	}
-
-	// POST: api/v1/orders/{id}/dispute/resolve
-	[HttpPost("{id}/dispute/resolve")]
-	[RequirePermission(Permissions.UsersManage)]
-	public async Task<IActionResult> ResolveDispute(Guid id)
-	{
-		// Logic to close ticket
-		return Ok("Dispute resolved. User notified.");
-	}
-
-	// GET: api/v1/orders/returns
-	// Fetches all active return requests
-	[HttpGet("returns")]
-	[RequirePermission(Permissions.OrdersManage)]
-	public async Task<IActionResult> GetReturnRequests()
-	{
-		var returns = await _context.Orders
-			.Include(o => o.User)
-			.Include(o => o.Items)
-			.ThenInclude(i => i.Product)
-			.Where(o => o.Status == OrderStatus.ReturnRequested)
-			.OrderByDescending(o => o.PlacedAt) // Or UpdatedAt if you track that
-			.Select(o => new
-			{
-				o.Id,
-				Customer = o.User.FullName,
-				DateRequested = DateTime.UtcNow.AddHours(-4), // Mock diff
-				TotalAmount = o.TotalAmount,
-				// In a real app, you'd store the "Return Reason" in a separate table/field
-				Reason = "Item damaged on arrival",
-				Items = o.Items.Select(i => i.ProductName).ToList()
-			})
-			.ToListAsync();
-
-		return Ok(returns);
-	}
-
-	// POST: api/v1/orders/{id}/return/decide
-	[HttpPost("{id}/return/decide")]
-	[RequirePermission(Permissions.FinanceRefund)]
-	public async Task<IActionResult> ProcessReturnDecision(Guid id, [FromBody] ReturnDecisionDto request)
-	{
-		var order = await _context.Orders.FindAsync(id);
-		if (order == null) return NotFound();
-
-		if (request.Approved)
-		{
-			// Update Status
-			order.Status = request.Restock ? OrderStatus.Returned : OrderStatus.Refunded;
-			order.PaymentStatus = PaymentStatus.Refunded;
-
-			// Logic: Generate Shipping Label (Mock)
-			// Logic: Trigger Refund via Stripe/PayPal
-		}
-		else
-		{
-			// Reject: Revert to Delivered
-			order.Status = OrderStatus.Delivered;
-		}
-
-		await _context.SaveChangesAsync();
-		return Ok(new { Message = request.Approved ? "Return approved & processed." : "Return rejected." });
-	}
-
-	
-
-	[HttpPut("{id}/status")]
-	public async Task<IActionResult> UpdateOrderStatus(Guid id, [FromBody] string newStatusRaw)
-	{
-		if (!Enum.TryParse<OrderStatus>(newStatusRaw, true, out var newStatus))
-			return BadRequest("Invalid status.");
-
-		var order = await _context.Orders.FindAsync(id);
-		if (order == null) return NotFound("Order not found.");
-
-		var oldStatus = order.Status;
-		order.Status = newStatus;
-
-		if (newStatus == OrderStatus.Delivered && oldStatus != OrderStatus.Delivered)
-		{
-			var notif = new Notification
-			{
-				UserId = order.UserId,
-				Title = "Order Delivered! 📦",
-				Body = $"Order delivered.",
-				Type = "ReviewPrompt",
-				RelatedEntityId = order.Id.ToString(),
-				CreatedAt = DateTime.UtcNow
-			};
-			_context.Notifications.Add(notif);
-
-			await _hubContext.Clients.Group(order.UserId.ToString())
-				.SendAsync("ReceiveNotification", notif.Title, notif.Body);
-		}
-		else if (newStatus == OrderStatus.Shipped && oldStatus != OrderStatus.Shipped)
-		{
-			var notif = new Notification
-			{
-				UserId = order.UserId,
-				Title = "Order Shipped! 🚚",
-				Body = $"Order shipped.",
-				Type = "OrderUpdate",
-				RelatedEntityId = order.Id.ToString()
-			};
-			_context.Notifications.Add(notif);
-		}
-
-		await _context.SaveChangesAsync();
-		return Ok(new { Message = "Status updated" });
 	}
 
 	[HttpDelete("{id}")]
@@ -468,5 +489,74 @@ public class OrdersController : ControllerBase
 		_context.Orders.Remove(order);
 		await _context.SaveChangesAsync();
 		return Ok("Order deleted");
+	}
+
+	// ==================================================================================
+	// 4. REFUNDS, RETURNS & DISPUTES
+	// ==================================================================================
+
+	[HttpPost("{id}/refund")]
+	[RequirePermission(Permissions.FinanceRefund)]
+	public async Task<IActionResult> TriggerRefund(Guid id)
+	{
+		var order = await _context.Orders.FindAsync(id);
+		if (order == null) return NotFound();
+
+		order.Status = OrderStatus.Refunded;
+		order.PaymentStatus = PaymentStatus.Refunded;
+
+		await _context.SaveChangesAsync();
+		return Ok("Refund processed successfully.");
+	}
+
+	[HttpPost("{id}/dispute/resolve")]
+	[RequirePermission(Permissions.UsersManage)]
+	public async Task<IActionResult> ResolveDispute(Guid id)
+	{
+		return Ok("Dispute resolved. User notified.");
+	}
+
+	[HttpGet("returns")]
+	[RequirePermission(Permissions.OrdersManage)]
+	public async Task<IActionResult> GetReturnRequests()
+	{
+		var returns = await _context.Orders
+			.Include(o => o.User)
+			.Include(o => o.Items).ThenInclude(i => i.Product)
+			.Where(o => o.Status == OrderStatus.ReturnRequested)
+			.OrderByDescending(o => o.PlacedAt)
+			.Select(o => new
+			{
+				o.Id,
+				Customer = o.User.FullName,
+				DateRequested = DateTime.UtcNow.AddHours(-4),
+				TotalAmount = o.TotalAmount,
+				Reason = "Item damaged on arrival",
+				Items = o.Items.Select(i => i.ProductName).ToList()
+			})
+			.ToListAsync();
+
+		return Ok(returns);
+	}
+
+	[HttpPost("{id}/return/decide")]
+	[RequirePermission(Permissions.FinanceRefund)]
+	public async Task<IActionResult> ProcessReturnDecision(Guid id, [FromBody] ReturnDecisionDto request)
+	{
+		var order = await _context.Orders.FindAsync(id);
+		if (order == null) return NotFound();
+
+		if (request.Approved)
+		{
+			order.Status = request.Restock ? OrderStatus.Returned : OrderStatus.Refunded;
+			order.PaymentStatus = PaymentStatus.Refunded;
+		}
+		else
+		{
+			order.Status = OrderStatus.Delivered;
+		}
+
+		await _context.SaveChangesAsync();
+		return Ok(new { Message = request.Approved ? "Return approved & processed." : "Return rejected." });
 	}
 }

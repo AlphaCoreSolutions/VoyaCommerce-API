@@ -19,13 +19,29 @@ public class SellerWalletController : ControllerBase
 	// FEATURE 6: FINANCIALS
 
 	[HttpGet]
+	[HttpGet]
 	public async Task<IActionResult> GetWallet()
 	{
 		var userId = GetUserId();
+
+		// Check if user is a Store Owner
 		var store = await _context.Stores.FirstOrDefaultAsync(s => s.OwnerId == userId);
 
-		var transactions = await _context.WalletTransactions
-			.Where(t => t.StoreId == store!.Id)
+		// Logic: Get transactions for Store OR directly for User
+		var query = _context.WalletTransactions.AsQueryable();
+
+		if (store != null)
+		{
+			// Get both Store transactions AND personal auction transactions
+			query = query.Where(t => t.StoreId == store.Id || t.UserId == userId);
+		}
+		else
+		{
+			// Regular user (Auction Seller only)
+			query = query.Where(t => t.UserId == userId);
+		}
+
+		var transactions = await query
 			.OrderByDescending(t => t.Date)
 			.Take(50)
 			.ToListAsync();

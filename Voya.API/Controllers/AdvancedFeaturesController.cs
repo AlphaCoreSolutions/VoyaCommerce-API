@@ -240,42 +240,7 @@ public class AdvancedFeaturesController : ControllerBase
 		return Ok(new { Message = "Gift claimed! It will appear in your orders." });
 	}
 
-	// ==========================================
-	// 6. SHARED GROUP CART (Multi-User)
-	// ==========================================
-	[HttpPost("group-cart/create")]
-	public async Task<IActionResult> CreateGroupCart()
-	{
-		var cart = new SharedCart
-		{
-			HostUserId = GetUserId(),
-			JoinCode = new Random().Next(1000, 9999).ToString(),
-			ParticipantUserIds = new List<Guid> { GetUserId() }
-		};
-		_context.SharedCarts.Add(cart);
-		await _context.SaveChangesAsync();
-		return Ok(new { CartId = cart.Id, JoinCode = cart.JoinCode });
-	}
+	
 
-	[HttpPost("group-cart/join")]
-	public async Task<IActionResult> JoinGroupCart(string code)
-	{
-		var cart = await _context.SharedCarts.FirstOrDefaultAsync(c => c.JoinCode == code && c.IsActive);
-		if (cart == null) return NotFound("Invalid code");
-
-		var userId = GetUserId();
-		if (!cart.ParticipantUserIds.Contains(userId))
-		{
-			cart.ParticipantUserIds.Add(userId);
-			await _context.SaveChangesAsync();
-
-			// Notify Group
-			await _hubContext.Clients.Group(cart.Id.ToString()).SendAsync("UserJoined", userId);
-		}
-
-		return Ok(new { Message = "Joined Group Cart", CartId = cart.Id });
-	}
-
-	// NOTE: Adding items to group cart would basically replicate the standard Cart logic 
-	// but target the SharedCart table and broadcast updates via SignalR.
+	
 }

@@ -18,9 +18,12 @@ public class VoyaDbContext : DbContext
 	public DbSet<Category> Categories { get; set; }
 	public DbSet<Order> Orders { get; set; }
 	public DbSet<OrderItem> OrderItems { get; set; }
+	public DbSet<SplitBill> SplitBills { get; set; }
+	public DbSet<SplitBillShare> SplitBillShares { get; set; }
 	public DbSet<Address> Addresses { get; set; }
 	public DbSet<Cart> Carts { get; set; }
 	public DbSet<CartItem> CartItems { get; set; }
+	public DbSet<CartMember> CartMembers { get; set; }
 	public DbSet<PaymentMethod> PaymentMethods { get; set; }
 	public DbSet<Voucher> Vouchers { get; set; }
 	public DbSet<UserVoucher> UserVouchers { get; set; }
@@ -34,7 +37,6 @@ public class VoyaDbContext : DbContext
 	public DbSet<StyleBoard> StyleBoards { get; set; }
 	public DbSet<GiftOrder> GiftOrders { get; set; }
 	public DbSet<CrowdFundCampaign> CrowdFundCampaigns { get; set; }
-	public DbSet<SharedCart> SharedCarts { get; set; }
 	public DbSet<Store> Stores { get; set; }
 	public DbSet<FlashSale> FlashSales { get; set; }
 	public DbSet<ProductBundle> ProductBundles { get; set; }
@@ -104,6 +106,9 @@ public class VoyaDbContext : DbContext
 	public DbSet<WikiArticle> WikiArticles { get; set; }
 	public DbSet<TicketMessage> TicketMessages { get; set; }
 
+	public DbSet<Auction> Auctions { get; set; }
+	public DbSet<AuctionBid> AuctionBids { get; set; }
+
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
 	{
 		base.OnModelCreating(modelBuilder);
@@ -158,6 +163,12 @@ public class VoyaDbContext : DbContext
 			.HasForeignKey(c => c.ParentId)
 			.OnDelete(DeleteBehavior.Restrict);
 
+		// Shared Cart
+		modelBuilder.Entity<CartMember>()
+		.HasOne(cm => cm.Cart)
+		.WithMany(c => c.Members)
+		.HasForeignKey(cm => cm.CartId);
+
 		// 5. Configure Order
 		modelBuilder.Entity<Order>()
 			.Property(o => o.Status)
@@ -173,14 +184,26 @@ public class VoyaDbContext : DbContext
 			.HasForeignKey(i => i.OrderId)
 			.OnDelete(DeleteBehavior.Cascade);
 
+		modelBuilder.Entity<SplitBill>()
+		.HasOne(sb => sb.Cart)
+		.WithMany()
+		.HasForeignKey(sb => sb.CartId);
+
 		// Configure Indexes
 		modelBuilder.Entity<PaymentMethod>().HasIndex(p => p.UserId);
 		modelBuilder.Entity<Voucher>().HasIndex(v => v.Code).IsUnique();
 		modelBuilder.Entity<GameHistory>().HasIndex(g => g.UserId);
 		modelBuilder.Entity<GameHistory>().HasIndex(g => g.PlayedAt);
 
-		// 6. Review Images
-		modelBuilder.Entity<Review>()
+		modelBuilder.Entity<Auction>()
+		.HasOne(a => a.CurrentWinner)
+		.WithMany()
+		.HasForeignKey(a => a.CurrentWinnerId)
+		.OnDelete(DeleteBehavior.Restrict);
+	
+
+	// 6. Review Images
+	modelBuilder.Entity<Review>()
 			.Property(r => r.ImageUrls)
 			.HasConversion(
 				v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
@@ -203,17 +226,7 @@ public class VoyaDbContext : DbContext
 				c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
 				c => c.ToList()));
 
-		// 8. Shared Cart Participants
-		modelBuilder.Entity<SharedCart>()
-			.Property(s => s.ParticipantUserIds)
-			.HasConversion(
-				v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
-				v => JsonSerializer.Deserialize<List<Guid>>(v, (JsonSerializerOptions?)null) ?? new List<Guid>()
-			)
-			.Metadata.SetValueComparer(new ValueComparer<List<Guid>>(
-				(c1, c2) => c1!.SequenceEqual(c2!),
-				c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
-				c => c.ToList()));
+		
 
 		modelBuilder.Entity<Store>()
 			.HasIndex(s => s.OwnerId)

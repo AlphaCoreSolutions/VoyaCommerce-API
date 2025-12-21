@@ -63,15 +63,3 @@ public class CrowdFundCampaign
 	public DateTime Deadline { get; set; }
 }
 
-// 6. Shared Group Cart
-public class SharedCart
-{
-	public Guid Id { get; set; } = Guid.NewGuid();
-	public Guid HostUserId { get; set; }
-	public string JoinCode { get; set; } = string.Empty; // e.g. "TEAM-99"
-
-	// Who is in the cart?
-	public List<Guid> ParticipantUserIds { get; set; } = new();
-
-	public bool IsActive { get; set; } = true;
-}

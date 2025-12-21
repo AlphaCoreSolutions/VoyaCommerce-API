@@ -27,7 +27,7 @@ public class NexusConfigController : ControllerBase
 		if (setting == null) return NotFound();
 
 		setting.Value = request.Value;
-		setting.LastUpdated = DateTime.UtcNow;
+		setting.UpdatedAt = DateTime.UtcNow;
 
 		await _context.SaveChangesAsync();
 		return Ok($"Setting {key} updated.");

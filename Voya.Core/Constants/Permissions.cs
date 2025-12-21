@@ -11,7 +11,7 @@ public static class Permissions
 	public const string StoresApprove = "stores.approve";
 	public const string StoresManage = "stores.manage";
 
-	// Orders (ADDED THESE)
+	// Orders
 	public const string OrdersView = "orders.view";
 	public const string OrdersManage = "orders.manage";
 
@@ -20,14 +20,20 @@ public static class Permissions
 	public const string FinancePayout = "finance.payout";
 	public const string FinanceRefund = "finance.refund";
 
-	// Content
-	public const string ContentManage = "content.manage";
+	// === ADDED THESE ===
+	// Campaigns (Launchpad)
+	public const string CampaignsView = "campaigns.view";
 
-	// Marketing (Fixes NexusMarketingController)
+	// Settings (Global Kill Switch)
+	public const string SettingsView = "settings.view";
+	public const string SettingsManage = "settings.manage";
+
+	// Marketing
 	public const string MarketingManage = "marketing.manage";
 
 	// System
 	public const string SystemConfig = "system.config";
 	public const string StaffManage = "staff.manage";
 	public const string LogisticsManage = "logistics.manage";
+	public const string ContentManage = "content.manage";
 }

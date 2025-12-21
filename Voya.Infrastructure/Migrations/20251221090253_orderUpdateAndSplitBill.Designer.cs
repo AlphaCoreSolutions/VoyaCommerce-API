@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Voya.Infrastructure.Persistence;
@@ -12,9 +13,11 @@ using Voya.Infrastructure.Persistence;
 namespace Voya.Infrastructure.Migrations
 {
     [DbContext(typeof(VoyaDbContext))]
-    partial class VoyaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251221090253_orderUpdateAndSplitBill")]
+    partial class orderUpdateAndSplitBill
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -409,78 +412,6 @@ namespace Voya.Infrastructure.Migrations
                     b.ToTable("AppVersionConfigs");
                 });
 
-            modelBuilder.Entity("Voya.Core.Entities.Auction", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("CurrentHighestBid")
-                        .IsConcurrencyToken()
-                        .HasColumnType("numeric");
-
-                    b.Property<Guid?>("CurrentWinnerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("EndTime")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("ProductId")
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("ReservePrice")
-                        .HasColumnType("numeric");
-
-                    b.Property<Guid>("SellerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("StartPrice")
-                        .HasColumnType("numeric");
-
-                    b.Property<DateTime>("StartTime")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CurrentWinnerId");
-
-                    b.HasIndex("ProductId");
-
-                    b.HasIndex("SellerId");
-
-                    b.ToTable("Auctions");
-                });
-
-            modelBuilder.Entity("Voya.Core.Entities.AuctionBid", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("Amount")
-                        .HasColumnType("numeric");
-
-                    b.Property<Guid>("AuctionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("PlacedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AuctionId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("AuctionBids");
-                });
-
             modelBuilder.Entity("Voya.Core.Entities.BlacklistRequest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -518,9 +449,6 @@ namespace Voya.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("CreatorId")
-                        .HasColumnType("uuid");
-
                     b.Property<string>("CreatorName")
                         .IsRequired()
                         .HasColumnType("text");
@@ -542,8 +470,6 @@ namespace Voya.Infrastructure.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("CreatorId");
 
                     b.ToTable("Campaigns");
                 });
@@ -1239,7 +1165,7 @@ namespace Voya.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<DateTime>("UpdatedAt")
+                    b.Property<DateTime>("LastUpdated")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Value")
@@ -1694,10 +1620,7 @@ namespace Voya.Infrastructure.Migrations
                     b.Property<DateTime>("RequestedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid?>("StoreId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("UserId")
+                    b.Property<Guid>("StoreId")
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
@@ -2878,20 +2801,11 @@ namespace Voya.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<Guid?>("OrderId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid?>("StoreId")
+                    b.Property<Guid>("StoreId")
                         .HasColumnType("uuid");
 
                     b.Property<int>("Type")
                         .HasColumnType("integer");
-
-                    b.Property<Guid?>("UserId")
-                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -3084,62 +2998,6 @@ namespace Voya.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("Voya.Core.Entities.Auction", b =>
-                {
-                    b.HasOne("Voya.Core.Entities.User", "CurrentWinner")
-                        .WithMany()
-                        .HasForeignKey("CurrentWinnerId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("Product", "Product")
-                        .WithMany()
-                        .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Voya.Core.Entities.User", "Seller")
-                        .WithMany()
-                        .HasForeignKey("SellerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("CurrentWinner");
-
-                    b.Navigation("Product");
-
-                    b.Navigation("Seller");
-                });
-
-            modelBuilder.Entity("Voya.Core.Entities.AuctionBid", b =>
-                {
-                    b.HasOne("Voya.Core.Entities.Auction", "Auction")
-                        .WithMany("Bids")
-                        .HasForeignKey("AuctionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Voya.Core.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Auction");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("Voya.Core.Entities.Campaign", b =>
-                {
-                    b.HasOne("Voya.Core.Entities.User", "Creator")
-                        .WithMany()
-                        .HasForeignKey("CreatorId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Creator");
                 });
 
             modelBuilder.Entity("Voya.Core.Entities.CartItem", b =>
@@ -3431,11 +3289,6 @@ namespace Voya.Infrastructure.Migrations
             modelBuilder.Entity("ProductOption", b =>
                 {
                     b.Navigation("Values");
-                });
-
-            modelBuilder.Entity("Voya.Core.Entities.Auction", b =>
-                {
-                    b.Navigation("Bids");
                 });
 
             modelBuilder.Entity("Voya.Core.Entities.Cart", b =>

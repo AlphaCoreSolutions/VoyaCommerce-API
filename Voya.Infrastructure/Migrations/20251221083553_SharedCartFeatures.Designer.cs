@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Voya.Infrastructure.Persistence;
@@ -12,9 +13,11 @@ using Voya.Infrastructure.Persistence;
 namespace Voya.Infrastructure.Migrations
 {
     [DbContext(typeof(VoyaDbContext))]
-    partial class VoyaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251221083553_SharedCartFeatures")]
+    partial class SharedCartFeatures
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -409,78 +412,6 @@ namespace Voya.Infrastructure.Migrations
                     b.ToTable("AppVersionConfigs");
                 });
 
-            modelBuilder.Entity("Voya.Core.Entities.Auction", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("CurrentHighestBid")
-                        .IsConcurrencyToken()
-                        .HasColumnType("numeric");
-
-                    b.Property<Guid?>("CurrentWinnerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("EndTime")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("ProductId")
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("ReservePrice")
-                        .HasColumnType("numeric");
-
-                    b.Property<Guid>("SellerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("StartPrice")
-                        .HasColumnType("numeric");
-
-                    b.Property<DateTime>("StartTime")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CurrentWinnerId");
-
-                    b.HasIndex("ProductId");
-
-                    b.HasIndex("SellerId");
-
-                    b.ToTable("Auctions");
-                });
-
-            modelBuilder.Entity("Voya.Core.Entities.AuctionBid", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("Amount")
-                        .HasColumnType("numeric");
-
-                    b.Property<Guid>("AuctionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("PlacedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AuctionId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("AuctionBids");
-                });
-
             modelBuilder.Entity("Voya.Core.Entities.BlacklistRequest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -518,9 +449,6 @@ namespace Voya.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("CreatorId")
-                        .HasColumnType("uuid");
-
                     b.Property<string>("CreatorName")
                         .IsRequired()
                         .HasColumnType("text");
@@ -542,8 +470,6 @@ namespace Voya.Infrastructure.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("CreatorId");
 
                     b.ToTable("Campaigns");
                 });
@@ -1239,7 +1165,7 @@ namespace Voya.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<DateTime>("UpdatedAt")
+                    b.Property<DateTime>("LastUpdated")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Value")
@@ -1568,7 +1494,7 @@ namespace Voya.Infrastructure.Migrations
                     b.Property<int>("PointsRedeemed")
                         .HasColumnType("integer");
 
-                    b.Property<Guid?>("ShippingAddressId")
+                    b.Property<Guid>("ShippingAddressId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("ShippingAddressJson")
@@ -1607,10 +1533,6 @@ namespace Voya.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("MainImage")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<Guid>("OrderId")
                         .HasColumnType("uuid");
 
@@ -1627,9 +1549,6 @@ namespace Voya.Infrastructure.Migrations
                     b.Property<string>("SelectedOptionsJson")
                         .HasColumnType("text");
 
-                    b.Property<Guid?>("ShipmentId")
-                        .HasColumnType("uuid");
-
                     b.Property<decimal>("UnitPrice")
                         .HasColumnType("numeric");
 
@@ -1638,8 +1557,6 @@ namespace Voya.Infrastructure.Migrations
                     b.HasIndex("OrderId");
 
                     b.HasIndex("ProductId");
-
-                    b.HasIndex("ShipmentId");
 
                     b.ToTable("OrderItems");
                 });
@@ -1694,10 +1611,7 @@ namespace Voya.Infrastructure.Migrations
                     b.Property<DateTime>("RequestedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid?>("StoreId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("UserId")
+                    b.Property<Guid>("StoreId")
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
@@ -2083,9 +1997,6 @@ namespace Voya.Infrastructure.Migrations
                     b.Property<DateTime?>("ActualDeliveryTime")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid>("AddressId")
-                        .HasColumnType("uuid");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -2113,9 +2024,6 @@ namespace Voya.Infrastructure.Migrations
                     b.Property<Guid?>("ProviderId")
                         .HasColumnType("uuid");
 
-                    b.Property<decimal>("ShippingCost")
-                        .HasColumnType("numeric");
-
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
@@ -2125,80 +2033,11 @@ namespace Voya.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AddressId");
-
                     b.HasIndex("DriverId");
 
                     b.HasIndex("OrderId");
 
                     b.ToTable("Shipments");
-                });
-
-            modelBuilder.Entity("Voya.Core.Entities.SplitBill", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("CartId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("InitiatorUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("TotalAmount")
-                        .HasColumnType("numeric");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CartId");
-
-                    b.ToTable("SplitBills");
-                });
-
-            modelBuilder.Entity("Voya.Core.Entities.SplitBillShare", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("AmountDue")
-                        .HasColumnType("numeric");
-
-                    b.Property<decimal>("AmountPaid")
-                        .HasColumnType("numeric");
-
-                    b.Property<DateTime?>("PaidAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("PaymentReference")
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("SplitBillId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SplitBillId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("SplitBillShares");
                 });
 
             modelBuilder.Entity("Voya.Core.Entities.StaffShift", b =>
@@ -2878,20 +2717,11 @@ namespace Voya.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<Guid?>("OrderId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid?>("StoreId")
+                    b.Property<Guid>("StoreId")
                         .HasColumnType("uuid");
 
                     b.Property<int>("Type")
                         .HasColumnType("integer");
-
-                    b.Property<Guid?>("UserId")
-                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -3086,62 +2916,6 @@ namespace Voya.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("Voya.Core.Entities.Auction", b =>
-                {
-                    b.HasOne("Voya.Core.Entities.User", "CurrentWinner")
-                        .WithMany()
-                        .HasForeignKey("CurrentWinnerId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("Product", "Product")
-                        .WithMany()
-                        .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Voya.Core.Entities.User", "Seller")
-                        .WithMany()
-                        .HasForeignKey("SellerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("CurrentWinner");
-
-                    b.Navigation("Product");
-
-                    b.Navigation("Seller");
-                });
-
-            modelBuilder.Entity("Voya.Core.Entities.AuctionBid", b =>
-                {
-                    b.HasOne("Voya.Core.Entities.Auction", "Auction")
-                        .WithMany("Bids")
-                        .HasForeignKey("AuctionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Voya.Core.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Auction");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("Voya.Core.Entities.Campaign", b =>
-                {
-                    b.HasOne("Voya.Core.Entities.User", "Creator")
-                        .WithMany()
-                        .HasForeignKey("CreatorId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Creator");
-                });
-
             modelBuilder.Entity("Voya.Core.Entities.CartItem", b =>
                 {
                     b.HasOne("Voya.Core.Entities.Cart", null)
@@ -3252,15 +3026,9 @@ namespace Voya.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Voya.Core.Entities.Shipment", "Shipment")
-                        .WithMany("Items")
-                        .HasForeignKey("ShipmentId");
-
                     b.Navigation("Order");
 
                     b.Navigation("Product");
-
-                    b.Navigation("Shipment");
                 });
 
             modelBuilder.Entity("Voya.Core.Entities.ProductTierPrice", b =>
@@ -3293,57 +3061,19 @@ namespace Voya.Infrastructure.Migrations
 
             modelBuilder.Entity("Voya.Core.Entities.Shipment", b =>
                 {
-                    b.HasOne("Voya.Core.Entities.Address", "Address")
-                        .WithMany()
-                        .HasForeignKey("AddressId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
                     b.HasOne("Voya.Core.Entities.DriverProfile", "Driver")
                         .WithMany()
                         .HasForeignKey("DriverId");
 
                     b.HasOne("Voya.Core.Entities.Order", "Order")
-                        .WithMany("Shipments")
+                        .WithMany()
                         .HasForeignKey("OrderId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Address");
-
                     b.Navigation("Driver");
 
                     b.Navigation("Order");
-                });
-
-            modelBuilder.Entity("Voya.Core.Entities.SplitBill", b =>
-                {
-                    b.HasOne("Voya.Core.Entities.Cart", "Cart")
-                        .WithMany()
-                        .HasForeignKey("CartId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Cart");
-                });
-
-            modelBuilder.Entity("Voya.Core.Entities.SplitBillShare", b =>
-                {
-                    b.HasOne("Voya.Core.Entities.SplitBill", "SplitBill")
-                        .WithMany("Shares")
-                        .HasForeignKey("SplitBillId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Voya.Core.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("SplitBill");
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Voya.Core.Entities.Store", b =>
@@ -3433,11 +3163,6 @@ namespace Voya.Infrastructure.Migrations
                     b.Navigation("Values");
                 });
 
-            modelBuilder.Entity("Voya.Core.Entities.Auction", b =>
-                {
-                    b.Navigation("Bids");
-                });
-
             modelBuilder.Entity("Voya.Core.Entities.Cart", b =>
                 {
                     b.Navigation("Items");
@@ -3460,18 +3185,6 @@ namespace Voya.Infrastructure.Migrations
             modelBuilder.Entity("Voya.Core.Entities.Order", b =>
                 {
                     b.Navigation("Items");
-
-                    b.Navigation("Shipments");
-                });
-
-            modelBuilder.Entity("Voya.Core.Entities.Shipment", b =>
-                {
-                    b.Navigation("Items");
-                });
-
-            modelBuilder.Entity("Voya.Core.Entities.SplitBill", b =>
-                {
-                    b.Navigation("Shares");
                 });
 
             modelBuilder.Entity("Voya.Core.Entities.Store", b =>
