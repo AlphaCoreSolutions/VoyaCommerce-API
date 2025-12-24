@@ -1,4 +1,5 @@
-using Hangfire; // <--- NEW
+using Hangfire;
+using Hangfire.PostgreSql;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -94,7 +95,8 @@ builder.Services.AddHangfire(configuration => configuration
 	.SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
 	.UseSimpleAssemblyNameTypeSerializer()
 	.UseRecommendedSerializerSettings()
-	.UseSqlServerStorage(builder.Configuration.GetConnectionString("DefaultConnection")));
+	.UsePostgreSqlStorage(options =>
+		options.UseNpgsqlConnection(builder.Configuration.GetConnectionString("DefaultConnection"))));
 
 // Register the Hangfire Worker Server
 builder.Services.AddHangfireServer();
