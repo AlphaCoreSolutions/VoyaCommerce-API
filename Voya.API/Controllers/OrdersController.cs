@@ -388,41 +388,49 @@ public class OrdersController : ControllerBase
 
 	private async Task ReleaseAuctionFunds(Order order)
 	{
-		// 1. Check if order contains auction item
-		var auctionItem = order.Items.FirstOrDefault();
-		if (auctionItem == null) return;
+		// 1. Check if order contains items
+		var orderItem = order.Items.FirstOrDefault();
+		if (orderItem == null) return;
 
-		// 2. Find associated Auction that was 'Sold'
+		// 2. Find associated Auction
+		// Logic: In the Background Service, we stored the 'Auction.Id' inside 'OrderItem.ProductId'
+		// So we look for an Auction where ID matches the Item's ProductId
 		var auction = await _context.Auctions
-			.FirstOrDefaultAsync(a => a.ProductId == auctionItem.ProductId && a.Status == AuctionStatus.Sold);
+			.FirstOrDefaultAsync(a => a.Id == orderItem.ProductId && a.Status == AuctionStatus.Sold);
 
+		// 3. Validate
 		if (auction != null && auction.SellerId != Guid.Empty)
 		{
-			// 3. Calculate Payout (e.g. 5% platform fee)
+			// 4. Calculate Payout (e.g., 5% platform fee)
 			decimal platformFeeRate = 0.05m;
 			decimal grossAmount = order.TotalAmount;
 			decimal fee = grossAmount * platformFeeRate;
 			decimal netPayout = grossAmount - fee;
 
-			// 4. Credit Seller
+			// 5. Credit Seller Wallet
 			var seller = await _context.Users.FindAsync(auction.SellerId);
 			if (seller != null)
 			{
 				seller.WalletBalance += netPayout;
 
-				// Using the unified WalletTransaction entity (works for Users and Stores)
+				// Create Transaction Record
 				var transaction = new WalletTransaction
 				{
 					UserId = seller.Id,
-					StoreId = null, // User-to-User sale (null StoreId)
+					StoreId = null, // C2C Sale: No Store Involved
 					Amount = netPayout,
 					Type = TransactionType.AuctionSale,
-					Description = $"Auction Payout: {auctionItem.ProductName} (Order #{order.Id.ToString()[..8]})",
+					Status = TransactionStatus.Completed,
+					// Use the Item name (which is the Auction Title snapshot)
+					Description = $"Auction Payout: {orderItem.ProductName} (Order #{order.Id.ToString()[..8]})",
 					OrderId = order.Id,
 					Date = DateTime.UtcNow
 				};
 
 				_context.WalletTransactions.Add(transaction);
+
+				// Optional: Mark auction as 'PaidOut' or 'Delivered' if you want to track lifecycle closely
+				auction.Status = AuctionStatus.Delivered;
 			}
 		}
 	}

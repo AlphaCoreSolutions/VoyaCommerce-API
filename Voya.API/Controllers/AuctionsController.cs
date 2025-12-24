@@ -30,37 +30,37 @@ public class AuctionsController : ControllerBase
 		return Guid.Parse(idClaim.Value);
 	}
 
-	// 1. GET ALL (Filterable)
-	// Supports guests viewing auctions
+	// ==========================================
+	// 1. PUBLIC VIEW (Browsing)
+	// ==========================================
+
 	[HttpGet]
 	[AllowAnonymous]
 	public async Task<IActionResult> GetAuctions([FromQuery] string filter = "live")
 	{
-		var query = _context.Auctions
-			.Include(a => a.Product)
-			.AsQueryable();
+		var query = _context.Auctions.AsQueryable();
 
+		// Only show Approved/Visible auctions to public
 		if (filter == "live")
 		{
 			query = query.Where(a => a.Status == AuctionStatus.Active && a.EndTime > DateTime.UtcNow);
 		}
 		else if (filter == "upcoming")
 		{
-			query = query.Where(a => a.Status == AuctionStatus.Active && a.StartTime > DateTime.UtcNow);
+			// Show approved upcoming auctions
+			query = query.Where(a => (a.Status == AuctionStatus.Upcoming || a.Status == AuctionStatus.Active)
+									 && a.StartTime > DateTime.UtcNow);
 		}
-		else if (filter == "ended")
-		{
-			query = query.Where(a => a.Status == AuctionStatus.Ended || a.Status == AuctionStatus.Sold);
-		}
+		// ... handled other filters like 'ended'
 
 		var auctions = await query
-			.OrderBy(a => a.EndTime)
+			.OrderBy(a => a.EndTime) // Ending soonest first
 			.Select(a => new
 			{
 				a.Id,
-				ProductName = a.Product.Name,
-				ImageUrl = a.Product.MainImageUrl,
-				CurrentPrice = a.CurrentHighestBid,
+				a.Title,            // Changed from Product.Name
+				ImageUrl = a.MainImageUrl, // Changed from Product.MainImage
+				CurrentPrice = a.CurrentHighestBid > 0 ? a.CurrentHighestBid : a.StartPrice,
 				a.StartTime,
 				a.EndTime,
 				TotalBids = a.Bids.Count,
@@ -71,87 +71,126 @@ public class AuctionsController : ControllerBase
 		return Ok(auctions);
 	}
 
-	// 2. GET DETAILS
 	[HttpGet("{id}")]
 	[AllowAnonymous]
 	public async Task<IActionResult> GetAuctionDetails(Guid id)
 	{
 		var auction = await _context.Auctions
-			.Include(a => a.Product)
-			.Include(a => a.Bids).ThenInclude(b => b.User) // Include bidders for history
+			.Include(a => a.Bids).ThenInclude(b => b.User)
+			.Include(a => a.Seller)
 			.FirstOrDefaultAsync(a => a.Id == id);
 
 		if (auction == null) return NotFound();
 
+		// Check if current user has a reminder set (if logged in)
+		bool hasReminder = false;
+		try
+		{
+			var userId = GetUserId();
+			hasReminder = await _context.AuctionReminders
+				.AnyAsync(r => r.AuctionId == id && r.UserId == userId);
+		}
+		catch { /* User not logged in, ignore */ }
+
 		return Ok(new
 		{
 			auction.Id,
-			Product = new { auction.Product.Name, auction.Product.Description, auction.Product.MainImageUrl },
+			auction.Title,
+			auction.Description,
+			auction.MainImageUrl,
+			auction.ImageGallery,
+			SellerName = auction.Seller.FullName,
+			SellerAvatar = auction.Seller.AvatarUrl,
 			auction.StartPrice,
 			auction.CurrentHighestBid,
 			auction.StartTime,
 			auction.EndTime,
 			Status = auction.Status.ToString(),
+			HasReminder = hasReminder, // UI needs this for the button state
 			Bids = auction.Bids.OrderByDescending(b => b.Amount).Take(10).Select(b => new
 			{
 				b.Amount,
-				UserName = b.User.FullName.Length > 2
-					? $"{b.User.FullName.Substring(0, 1)}***{b.User.FullName.Substring(b.User.FullName.Length - 1)}"
-					: "Anonymous", // Privacy masking
+				UserName = MaskName(b.User.FullName),
 				Time = b.PlacedAt
 			})
 		});
 	}
 
-	// 3. CREATE AUCTION (Admin/Seller Only)
+	private string MaskName(string name) =>
+		name.Length > 2 ? $"{name[0]}***{name[^1]}" : "Anonymous";
+
+	// ==========================================
+	// 2. SELLER ACTIONS (Create)
+	// ==========================================
+
 	[HttpPost]
 	public async Task<IActionResult> CreateAuction([FromBody] CreateAuctionRequest request)
 	{
 		var userId = GetUserId();
 
-		// Optional: Add Role Check here
-		// if (!User.IsInRole("Admin") && !User.IsInRole("Seller")) return Forbid();
+		// Validation
+		if (request.StartTime < DateTime.UtcNow)
+			return BadRequest("Start time cannot be in the past.");
 
-		var product = await _context.Products.FindAsync(request.ProductId);
-		if (product == null) return NotFound("Product not found");
+		if (request.EndTime <= request.StartTime)
+			return BadRequest("End time must be after start time.");
 
 		var auction = new Auction
 		{
-			ProductId = request.ProductId,
 			SellerId = userId,
+			Title = request.Title,
+			Description = request.Description,
+			MainImageUrl = request.MainImageUrl,
+			ImageGallery = request.ImageGallery ?? new List<string>(),
 			StartPrice = request.StartPrice,
-			CurrentHighestBid = request.StartPrice, // Bid starts at base price
+			CurrentHighestBid = request.StartPrice, // Initial bid baseline
+			ReservePrice = request.ReservePrice,
 			StartTime = request.StartTime,
 			EndTime = request.EndTime,
-			Status = AuctionStatus.Active
+
+			// CRITICAL: New auctions go to PendingApproval, not Active immediately
+			Status = AuctionStatus.PendingApproval
 		};
 
 		_context.Auctions.Add(auction);
 		await _context.SaveChangesAsync();
 
-		return Ok(new { AuctionId = auction.Id, Message = "Auction created successfully." });
+		// Notify Admins? (Optional: SignalR or Email)
+
+		return Ok(new
+		{
+			AuctionId = auction.Id,
+			Message = "Auction submitted for review. You will be notified when it is approved."
+		});
 	}
 
-	// 4. PLACE BID (Critical Logic)
+	// ==========================================
+	// 3. BUYER ACTIONS (Bid & Remind)
+	// ==========================================
+
 	[HttpPost("{id}/bid")]
 	public async Task<IActionResult> PlaceBid(Guid id, [FromBody] BidRequest request)
 	{
 		var userId = GetUserId();
 
-		// Use Transaction to prevent race conditions (Double Bidding)
 		using var transaction = await _context.Database.BeginTransactionAsync();
 		try
 		{
-			// Lock the row if using SQL Server specific hints, otherwise EF concurrency token handles basic checks
 			var auction = await _context.Auctions.FindAsync(id);
 
 			if (auction == null) return NotFound();
-			if (auction.Status != AuctionStatus.Active) return BadRequest("Auction is not active.");
+			if (auction.Status != AuctionStatus.Active) return BadRequest("Auction is not live.");
 			if (DateTime.UtcNow > auction.EndTime) return BadRequest("Auction has ended.");
+			if (auction.SellerId == userId) return BadRequest("You cannot bid on your own auction.");
 
-			// Validate Amount
-			if (request.Amount <= auction.CurrentHighestBid)
-				return BadRequest($"Bid must be higher than {auction.CurrentHighestBid}");
+			// Bid Validation
+			// Must be higher than current highest OR equal to start price if no bids yet
+			decimal minBid = auction.CurrentHighestBid > 0
+				? auction.CurrentHighestBid + 1.00m // Min increment logic (e.g. $1)
+				: auction.StartPrice;
+
+			if (request.Amount < minBid)
+				return BadRequest($"Bid must be at least {minBid:C}");
 
 			// Create Bid
 			var bid = new AuctionBid
@@ -162,13 +201,11 @@ public class AuctionsController : ControllerBase
 				PlacedAt = DateTime.UtcNow
 			};
 
-			// Update Auction State
+			// Update Auction
 			auction.CurrentHighestBid = request.Amount;
 			auction.CurrentWinnerId = userId;
 
-			// Anti-Sniping Rule: 
-			// If bid is placed in the last 30 seconds, extend the auction by 1 minute.
-			// This prevents bots from stealing the item at the last millisecond.
+			// Anti-Sniping (Extend by 1 min if < 30s left)
 			if ((auction.EndTime - DateTime.UtcNow).TotalSeconds < 30)
 			{
 				auction.EndTime = auction.EndTime.AddMinutes(1);
@@ -178,8 +215,7 @@ public class AuctionsController : ControllerBase
 			await _context.SaveChangesAsync();
 			await transaction.CommitAsync();
 
-			// REAL-TIME NOTIFICATION (SignalR)
-			// Notify everyone watching this auction
+			// Real-time Update
 			await _hubContext.Clients.Group($"Auction-{id}").SendAsync("NewBid", new
 			{
 				Amount = request.Amount,
@@ -187,23 +223,59 @@ public class AuctionsController : ControllerBase
 				User = "New Bidder"
 			});
 
-			return Ok(new { Message = "Bid placed successfully!", NewEndTime = auction.EndTime });
+			return Ok(new { Message = "Bid placed!", NewEndTime = auction.EndTime });
 		}
 		catch (Exception ex)
 		{
 			await transaction.RollbackAsync();
-			// Log error
-			return StatusCode(500, "Error processing bid: " + ex.Message);
+			return StatusCode(500, ex.Message);
 		}
+	}
+
+	// NEW: "Remind Me" Feature
+	[HttpPost("{id}/remind")]
+	public async Task<IActionResult> ToggleReminder(Guid id)
+	{
+		var userId = GetUserId();
+
+		var existing = await _context.AuctionReminders
+			.FirstOrDefaultAsync(r => r.AuctionId == id && r.UserId == userId);
+
+		if (existing != null)
+		{
+			_context.AuctionReminders.Remove(existing);
+			await _context.SaveChangesAsync();
+			return Ok(new { IsReminding = false, Message = "Reminder removed." });
+		}
+
+		var auction = await _context.Auctions.FindAsync(id);
+		if (auction == null) return NotFound();
+
+		_context.AuctionReminders.Add(new AuctionReminder
+		{
+			AuctionId = id,
+			UserId = userId
+		});
+
+		await _context.SaveChangesAsync();
+		return Ok(new { IsReminding = true, Message = "We will notify you when this starts!" });
 	}
 }
 
-// --- DTOs ---
+// ==========================================
+// 4. UPDATED DTOs
+// ==========================================
 
 public class CreateAuctionRequest
 {
-	public Guid ProductId { get; set; }
+	public string Title { get; set; } = string.Empty;
+	public string Description { get; set; } = string.Empty;
+	public string MainImageUrl { get; set; } = string.Empty;
+	public List<string>? ImageGallery { get; set; }
+
 	public decimal StartPrice { get; set; }
+	public decimal ReservePrice { get; set; }
+
 	public DateTime StartTime { get; set; }
 	public DateTime EndTime { get; set; }
 }

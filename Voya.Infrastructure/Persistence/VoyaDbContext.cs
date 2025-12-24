@@ -106,8 +106,12 @@ public class VoyaDbContext : DbContext
 	public DbSet<WikiArticle> WikiArticles { get; set; }
 	public DbSet<TicketMessage> TicketMessages { get; set; }
 
+	// === AUCTION DBSETS ===
 	public DbSet<Auction> Auctions { get; set; }
 	public DbSet<AuctionBid> AuctionBids { get; set; }
+
+	// === NEW: Add this line to fix the error ===
+	public DbSet<AuctionReminder> AuctionReminders { get; set; }
 
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
 	{
@@ -195,12 +199,25 @@ public class VoyaDbContext : DbContext
 		modelBuilder.Entity<GameHistory>().HasIndex(g => g.UserId);
 		modelBuilder.Entity<GameHistory>().HasIndex(g => g.PlayedAt);
 
+		// Configure Auction Money Precision
 		modelBuilder.Entity<Auction>()
-		.HasOne(a => a.CurrentWinner)
-		.WithMany()
-		.HasForeignKey(a => a.CurrentWinnerId)
-		.OnDelete(DeleteBehavior.Restrict);
+			.Property(a => a.StartPrice).HasColumnType("decimal(18,2)");
+		modelBuilder.Entity<Auction>()
+			.Property(a => a.CurrentHighestBid).HasColumnType("decimal(18,2)");
+		modelBuilder.Entity<Auction>()
+			.Property(a => a.ReservePrice).HasColumnType("decimal(18,2)");
+
+		modelBuilder.Entity<AuctionBid>()
+			.Property(b => b.Amount).HasColumnType("decimal(18,2)");
+
+		// Configure Reminder Relationship (Optional but good practice)
+		modelBuilder.Entity<AuctionReminder>()
+			.HasOne(r => r.Auction)
+			.WithMany(a => a.Reminders)
+			.HasForeignKey(r => r.AuctionId)
+			.OnDelete(DeleteBehavior.Cascade); // If auction deleted, delete reminders
 	
+
 
 	// 6. Review Images
 	modelBuilder.Entity<Review>()

@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Voya.API.Hubs; // For SignalR notifications
+using Voya.API.Hubs;
 using Voya.Core.Entities;
 using Voya.Infrastructure.Persistence;
 
@@ -28,16 +28,15 @@ public class AuctionBackgroundService : IAuctionBackgroundService
 		_logger = logger;
 	}
 
-	// This method is called automatically by Hangfire every minute
 	public async Task CheckExpiredAuctions()
 	{
 		try
 		{
 			var now = DateTime.UtcNow;
 
-			// Find Active auctions that have expired
+			// 1. Find Expired Active Auctions
+			// Note: We removed .Include(a => a.Product) because Auction is now standalone
 			var expiredAuctions = await _context.Auctions
-				.Include(a => a.Product)
 				.Where(a => a.Status == AuctionStatus.Active && a.EndTime <= now)
 				.ToListAsync();
 
@@ -47,39 +46,56 @@ public class AuctionBackgroundService : IAuctionBackgroundService
 			{
 				if (auction.CurrentWinnerId != null)
 				{
-					// 1. Mark as SOLD
-					auction.Status = AuctionStatus.Sold;
-					_logger.LogInformation($"Auction {auction.Id} SOLD to {auction.CurrentWinnerId} for ${auction.CurrentHighestBid}");
+					// === SCENARIO: AUCTION SOLD ===
 
-					// 2. Create a "Pending" Order for the winner to pay
-					// Note: In a full app, this logic might live in OrderService, 
-					// but we do it here for transactional safety.
+					// A. Mark Auction as SOLD
+					auction.Status = AuctionStatus.Sold;
+					_logger.LogInformation($"Auction {auction.Id} SOLD to {auction.CurrentWinnerId} for {auction.CurrentHighestBid:C}");
+
+					// B. Create the "Order" for the winner to pay
+					// We treat the Auction itself as the "Product" for the sake of the OrderItem
 					var order = new Order
 					{
 						Id = Guid.NewGuid(),
 						UserId = auction.CurrentWinnerId.Value,
 						PlacedAt = DateTime.UtcNow,
-						Status = OrderStatus.Pending,
-						PaymentStatus = PaymentStatus.Unpaid, // Winner needs to go to "My Orders" and Pay
+						Status = OrderStatus.Pending,       // Pending payment
+						PaymentStatus = PaymentStatus.Unpaid,
 						TotalAmount = auction.CurrentHighestBid,
 						SubTotal = auction.CurrentHighestBid,
-						// Link specific auction product item...
-						// (You would add OrderItem creation logic here)
+						// We can add a flag or type to distinguish this order source if needed
+						// Source = OrderSource.Auction 
 					};
+
+					// C. Create the Order Item Snapshot
+					var orderItem = new OrderItem
+					{
+						OrderId = order.Id,
+						// CRITICAL: We link the Item back to the Auction ID 
+						// effectively treating the Auction as the "Product" ID for lookup later
+						ProductId = auction.Id,
+						ProductName = auction.Title, // Use Auction Title
+													 // Assuming your OrderItem has an ImageUrl field, or we rely on Product lookup
+													 // If OrderItem doesn't have ImageUrl, you might rely on the ProductId lookup
+						Quantity = 1,
+						UnitPrice = auction.CurrentHighestBid
+					};
+
+					order.Items.Add(orderItem);
 					_context.Orders.Add(order);
 
-					// 3. Notify Winner (Real-time)
+					// D. Notify Winner (Real-time)
 					await _hubContext.Clients.User(auction.CurrentWinnerId.Value.ToString())
 						.SendAsync("AuctionWon", new
 						{
 							AuctionId = auction.Id,
-							ProductName = auction.Product.Name,
+							Title = auction.Title, // Changed from Product.Name
 							Price = auction.CurrentHighestBid
 						});
 				}
 				else
 				{
-					// No bids? End it.
+					// === SCENARIO: NO BIDS ===
 					auction.Status = AuctionStatus.Ended;
 					_logger.LogInformation($"Auction {auction.Id} ENDED without bids.");
 				}
@@ -90,7 +106,7 @@ public class AuctionBackgroundService : IAuctionBackgroundService
 		catch (Exception ex)
 		{
 			_logger.LogError(ex, "Error checking expired auctions");
-			throw; // Hangfire will retry automatically if we throw
+			throw;
 		}
 	}
 }

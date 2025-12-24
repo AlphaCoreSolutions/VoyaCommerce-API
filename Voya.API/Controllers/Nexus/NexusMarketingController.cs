@@ -146,4 +146,29 @@ public class NexusMarketingController : ControllerBase
 		// Logic: Send Push Notification/Email to all abandoned cart owners
 		return Ok($"Recovery campaign sent to users with {discountPercent}% offer.");
 	}
+
+	[HttpPost("auctions/{id}/approve")]
+	[RequirePermission(Permissions.ContentManage)]
+	public async Task<IActionResult> ApproveAuction(Guid id)
+	{
+		var auction = await _context.Auctions.Include(a => a.Seller).FirstOrDefaultAsync(a => a.Id == id);
+		if (auction == null) return NotFound();
+
+		// Logic: If StartTime is now or past, make Active. Else Upcoming.
+		if (auction.StartTime <= DateTime.UtcNow)
+		{
+			auction.Status = AuctionStatus.Active;
+		}
+		else
+		{
+			auction.Status = AuctionStatus.Upcoming;
+		}
+
+		await _context.SaveChangesAsync();
+
+		// Notify Seller
+		// _notificationService.Send(auction.SellerId, "Your auction is approved!");
+
+		return Ok("Auction approved.");
+	}
 }
