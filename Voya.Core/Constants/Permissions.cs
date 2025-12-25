@@ -31,6 +31,35 @@ public static class Permissions
 	// Marketing
 	public const string MarketingManage = "marketing.manage";
 
+	// Returns Management
+	public const string ReturnsView = "returns.view";
+	public const string ReturnsManage = "returns.manage";
+
+	// Taxes Management
+	public const string TaxView = "tax.view";
+	public const string TaxManage = "tax.manage";
+
+	// CMS Management
+	public const string CmsView = "cms.view";
+	public const string CmsManage = "cms.manage";
+
+	// Assets Management
+	public const string AssetsView = "assets.view";
+	public const string AssetsManage = "assets.manage";
+
+	// Global
+	public const string GlobalView = "global.view";
+
+	// AI Management
+	public const string AiView = "ai.view";
+	public const string AiManage = "ai.manage";
+
+	// Security (Nexus)
+	public const string SecurityImpersonate = "security.impersonate";
+	public const string SecurityLogsView = "security.logs.view";
+	public const string SecurityFirewallManage = "security.firewall.manage";
+	public const string SecurityApiKeysManage = "security.apikeys.manage";
+
 	// System
 	public const string SystemConfig = "system.config";
 	public const string StaffManage = "staff.manage";

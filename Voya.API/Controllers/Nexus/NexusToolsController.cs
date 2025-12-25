@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Voya.API.Attributes;
+using Voya.Core.Constants;
 using Voya.Infrastructure.Persistence;
 
 namespace Voya.API.Controllers.Nexus;
@@ -14,82 +16,222 @@ public class NexusToolsController : ControllerBase
 	public NexusToolsController(VoyaDbContext context) { _context = context; }
 
 	// FEATURE 1: GOD MODE SEARCH
+	// Security: requires SystemConfig because it can expose sensitive objects.
 	[HttpGet("search/global")]
-	public async Task<IActionResult> GlobalSearch([FromQuery] string query)
+	[RequirePermission(Permissions.SystemConfig)]
+	public async Task<IActionResult> GlobalSearch([FromQuery] string query, [FromQuery] int take = 5)
 	{
-		// Parallel search across users, stores, and products
-		var users = await _context.Users.Where(u => u.Email.Contains(query) || u.FullName.Contains(query)).Take(5).ToListAsync();
-		var stores = await _context.Stores.Where(s => s.Name.Contains(query)).Take(5).ToListAsync();
-		var products = await _context.Products.Where(p => p.Name.Contains(query)).Take(5).ToListAsync();
-		var orders = await _context.Orders.Where(o => o.Id.ToString().Contains(query)).Take(5).ToListAsync();
+		query = (query ?? "").Trim();
 
-		return Ok(new { Users = users, Stores = stores, Products = products, Orders = orders });
+		// Security tightening: block empty / too-short searches
+		if (query.Length < 3)
+			return BadRequest("Query must be at least 3 characters.");
+
+		// Hard cap to prevent data scraping
+		if (take < 1) take = 5;
+		if (take > 10) take = 10;
+
+		// NOTE: do NOT return full entities from admin search (PII leakage risk).
+		// Return a minimal projection for each type.
+		var users = await _context.Users
+			.AsNoTracking()
+			.Where(u =>
+				(!string.IsNullOrEmpty(u.Email) && u.Email.Contains(query)) ||
+				(!string.IsNullOrEmpty(u.FullName) && u.FullName.Contains(query)))
+			.OrderByDescending(u => u.CreatedAt)
+			.Take(take)
+			.Select(u => new
+			{
+				u.Id,
+				u.FullName,
+				u.Email,
+				u.CreatedAt,
+				IsActive = u.IsActive,
+				IsBanned = u.IsBanned,
+				IsStaff = u.NexusRoleId != null,
+				u.TrustScore
+			})
+			.ToListAsync();
+
+
+		var stores = await _context.Stores
+			.AsNoTracking()
+			.Where(s => !string.IsNullOrEmpty(s.Name) && s.Name.Contains(query))
+			.OrderByDescending(s => s.CreatedAt)
+			.Take(take)
+			.Select(s => new
+			{
+				s.Id,
+				s.Name,
+				s.Status,
+				s.CreatedAt
+			})
+			.ToListAsync();
+
+		var products = await _context.Products
+			.AsNoTracking()
+			.Where(p => !string.IsNullOrEmpty(p.Name) && p.Name.Contains(query))
+			.OrderByDescending(p => p.CreatedAt)
+			.Take(take)
+			.Select(p => new
+			{
+				p.Id,
+				p.Name,
+				p.BasePrice,
+				p.StockQuantity,
+				p.ApprovalStatus,
+				p.CreatedAt
+			})
+			.ToListAsync();
+
+		// Orders: searching by ID string is okay, but still cap.
+		var orders = await _context.Orders
+			.AsNoTracking()
+			.Where(o => o.Id.ToString().Contains(query))
+			.OrderByDescending(o => o.PlacedAt)
+			.Take(take)
+			.Select(o => new
+			{
+				o.Id,
+				o.Status,
+				o.TotalAmount,
+				o.PlacedAt,
+				o.UserId
+			})
+			.ToListAsync();
+
+		return Ok(new
+		{
+			Query = query,
+			Take = take,
+			Users = users,
+			Stores = stores,
+			Products = products,
+			Orders = orders
+		});
 	}
 
-	// FEATURE 2: USER DEVICE MAP (Heatmap Data)
-	// FEATURE 10: PLATFORM HEATMAP (REAL DB AGGREGATION)
+	// FEATURE 2/10: USER DEVICE MAP / PLATFORM HEATMAP
 	[HttpGet("geo-data")]
-	public async Task<IActionResult> GetGeoData()
+	[RequirePermission(Permissions.SystemConfig)]
+	public async Task<IActionResult> GetGeoData([FromQuery] int take = 100)
 	{
-		// Since we might not have Lat/Lng for every address, 
-		// we group by City/Governorate name to get counts.
+		// Security tightening: cap output size
+		if (take < 1) take = 100;
+		if (take > 500) take = 500;
+
+		// Group by City to avoid exposing raw addresses
 		var cityCounts = await _context.Addresses
+			.AsNoTracking()
 			.Where(a => !string.IsNullOrEmpty(a.City))
-			.GroupBy(a => a.City)
+			.GroupBy(a => a.City!)
 			.Select(g => new
 			{
 				City = g.Key,
 				UserCount = g.Count()
 			})
 			.OrderByDescending(x => x.UserCount)
+			.Take(take)
 			.ToListAsync();
 
-		// If you have Lat/Lng in Address entity, use this instead:
-		/*
-        var heatPoints = await _context.Addresses
-            .Where(a => a.Latitude != 0)
-            .Select(a => new { Lat = a.Latitude, Lng = a.Longitude, Weight = 1 })
-            .ToListAsync();
-        */
-
-		return Ok(cityCounts);
+		return Ok(new
+		{
+			Take = take,
+			Items = cityCounts
+		});
 	}
-	// FEATURE 4 (SAFE REPLACEMENT): DATA EXPLORER
-	// Instead of raw SQL, we provide pre-built safe reports
+
+	// FEATURE 4: SAFE REPORTS (pre-built)
 	[HttpGet("reports/custom")]
-	public async Task<IActionResult> GetSafeReport([FromQuery] string reportType)
+	[RequirePermission(Permissions.SystemConfig)]
+	public async Task<IActionResult> GetSafeReport([FromQuery] string reportType, [FromQuery] int take = 200)
 	{
-		if (reportType == "HighValueUsers")
+		reportType = (reportType ?? "").Trim();
+
+		if (string.IsNullOrWhiteSpace(reportType))
+			return BadRequest("reportType is required.");
+
+		if (take < 1) take = 200;
+		if (take > 1000) take = 1000;
+
+		// Normalize
+		var rt = reportType.ToLowerInvariant();
+
+		if (rt == "highvalueusers")
 		{
 			var data = await _context.Users
+				.AsNoTracking()
 				.Where(u => u.TotalSpentLifetime > 1000)
-				.Select(u => new { u.Id, u.FullName, u.Email, u.TotalSpentLifetime })
+				.OrderByDescending(u => u.TotalSpentLifetime)
+				.Take(take)
+				.Select(u => new
+				{
+					u.Id,
+					u.FullName,
+					u.Email,
+					u.TotalSpentLifetime
+				})
 				.ToListAsync();
-			return Ok(data);
+
+			return Ok(new
+			{
+				ReportType = "HighValueUsers",
+				Take = take,
+				Items = data
+			});
 		}
-		// Add more safe report types...
+
+		// Add more safe report types here...
 		return BadRequest("Unknown report type.");
 	}
 
 	// FEATURE 5: RECYCLE BIN
 	[HttpGet("recycle-bin")]
-	public async Task<IActionResult> GetDeletedItems()
+	[RequirePermission(Permissions.SystemConfig)]
+	public async Task<IActionResult> GetDeletedItems([FromQuery] int take = 50)
 	{
-		return Ok(await _context.RecycleBinItems.OrderByDescending(d => d.DeletedAt).Take(50).ToListAsync());
+		if (take < 1) take = 50;
+		if (take > 200) take = 200;
+
+		// Security: do not return full JsonData by default (can contain secrets/PII).
+		var items = await _context.RecycleBinItems
+			.AsNoTracking()
+			.OrderByDescending(d => d.DeletedAt)
+			.Take(take)
+			.Select(d => new
+			{
+				d.Id,
+				d.EntityType,
+				d.OriginalId,
+				d.DeletedAt,
+				d.DeletedByUserId
+			})
+			.ToListAsync();
+
+		return Ok(new { Take = take, Items = items });
 	}
 
-	[HttpPost("recycle-bin/{id}/restore")]
+	// Restore is still mock: it just removes the recycle bin entry.
+	// Later we can implement actual restore per EntityType.
+	[HttpPost("recycle-bin/{id:guid}/restore")]
+	[RequirePermission(Permissions.SystemConfig)]
 	public async Task<IActionResult> RestoreItem(Guid id)
 	{
-		var item = await _context.RecycleBinItems.FindAsync(id);
+		var item = await _context.RecycleBinItems.FirstOrDefaultAsync(x => x.Id == id);
 		if (item == null) return NotFound();
 
-		// Logic: Deserialize item.JsonData and re-insert into table
-		// Implementation requires generic deserialization or specific handling per type.
-		// For mockup:
+		// SECURITY NOTE:
+		// We are NOT restoring the original entity yet. We only remove the recycle-bin marker.
+		// This prevents a false claim of "restore succeeded".
 		_context.RecycleBinItems.Remove(item);
 		await _context.SaveChangesAsync();
 
-		return Ok($"Item {item.OriginalId} restored (mock).");
+		return Ok(new
+		{
+			Message = "Recycle bin entry removed (restore is currently mock).",
+			item.Id,
+			item.EntityType,
+			item.OriginalId
+		});
 	}
 }

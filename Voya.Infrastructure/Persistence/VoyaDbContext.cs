@@ -42,7 +42,7 @@ public class VoyaDbContext : DbContext
 	public DbSet<ProductBundle> ProductBundles { get; set; }
 	public DbSet<StoreStaff> StoreStaff { get; set; }
 	public DbSet<LiveEvent> LiveEvents { get; set; }
-	public DbSet<ReturnRequest> ReturnRequests { get; set; }
+	public DbSet<ReturnRequest> ReturnRequests => Set<ReturnRequest>();
 	public DbSet<WalletTransaction> WalletTransactions { get; set; }
 	public DbSet<PayoutRequest> PayoutRequests { get; set; }
 	public DbSet<StoreAuditLog> StoreAuditLogs { get; set; }
@@ -112,6 +112,17 @@ public class VoyaDbContext : DbContext
 
 	// === NEW: Add this line to fix the error ===
 	public DbSet<AuctionReminder> AuctionReminders { get; set; }
+
+	public DbSet<TaxRule> TaxRules => Set<TaxRule>();
+	public DbSet<TaxSettings> TaxSettings => Set<TaxSettings>();
+
+	public DbSet<CmsPost> CmsPosts => Set<CmsPost>();
+
+	public DbSet<AssetFile> AssetFiles => Set<AssetFile>();
+
+	public DbSet<AiFeatureFlag> AiFeatureFlags => Set<AiFeatureFlag>();
+	public DbSet<AiJobRun> AiJobRuns => Set<AiJobRun>();
+
 
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
 	{
@@ -259,5 +270,39 @@ public class VoyaDbContext : DbContext
 				v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions)null!),
 				v => System.Text.Json.JsonSerializer.Deserialize<List<string>>(v, (System.Text.Json.JsonSerializerOptions)null!) ?? new List<string>()
 			);
+
+		modelBuilder.Entity<ReturnRequest>()
+			.HasOne(r => r.Order)
+			.WithMany()
+			.HasForeignKey(r => r.OrderId)
+			.OnDelete(DeleteBehavior.Cascade);
+
+		modelBuilder.Entity<ReturnRequest>()
+			.HasOne(r => r.User)
+			.WithMany()
+			.HasForeignKey(r => r.UserId)
+			.OnDelete(DeleteBehavior.Restrict);
+
+		modelBuilder.Entity<TaxRule>()
+			.HasIndex(x => new { x.CountryCode, x.Region, x.City, x.CategoryId, x.StoreId, x.IsActive, x.Priority });
+
+		modelBuilder.Entity<TaxSettings>()
+			.HasIndex(x => x.Id);
+
+		modelBuilder.Entity<CmsPost>()
+			.HasIndex(x => x.Slug)
+			.IsUnique();
+
+		modelBuilder.Entity<CmsPost>()
+			.HasIndex(x => new { x.IsPublished, x.IsDeleted, x.PublishedAt });
+
+		modelBuilder.Entity<AssetFile>()
+			.HasIndex(x => new { x.IsDeleted, x.CreatedAt });
+
+		modelBuilder.Entity<AssetFile>()
+			.HasIndex(x => x.StoredFileName)
+			.IsUnique();
+
+
 	}
 }

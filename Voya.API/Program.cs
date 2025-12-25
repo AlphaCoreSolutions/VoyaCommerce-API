@@ -122,6 +122,7 @@ app.UseHangfireDashboard("/hangfire");
 
 app.MapHub<LiveHub>("/hubs/live");
 app.MapControllers();
+app.UseStaticFiles();
 
 // 7. Data Seeding & Job Scheduling
 using (var scope = app.Services.CreateScope())
